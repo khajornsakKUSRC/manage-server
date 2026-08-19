@@ -35,4 +35,10 @@ return [
         ],
     ],
 
+    'vsphere' => [
+        'url' => env('VSPHERE_URL'),
+        'username' => env('VSPHERE_USERNAME'),
+        'password' => env('VSPHERE_PASSWORD'),
+    ],
+
 ];
