@@ -3,15 +3,16 @@
 namespace App\Http\Controllers;
 
 use App\Models\DailyReport;
-use App\Services\DailyReportImportService;
+use App\Models\DailyReportItem;
 use App\Services\DailyReportPdfService;
-use App\Services\DailyReportSummaryService;
 use App\Services\DailyReportVsphereService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\Response as HttpResponse;
@@ -24,159 +25,127 @@ class DailyReportController extends Controller
         $availableDates = DailyReport::orderByDesc('report_date')->pluck('report_date')
             ->map(fn ($date) => $date->format('Y-m-d'));
 
-        $selectedDate = $request->query('date', $availableDates->first());
+        $selectedDate = $request->query('date', $availableDates->first() ?? now()->format('Y-m-d'));
 
-        $report = null;
-
-        if ($selectedDate) {
-            $report = DailyReport::with('items')
-                ->whereDate('report_date', $selectedDate)
-                ->first();
-
-            if ($report && ! $report->summary) {
-                $report->update(['summary' => app(DailyReportSummaryService::class)->summarize($report)]);
-            }
-        }
+        $report = DailyReport::with('items')
+            ->whereDate('report_date', $selectedDate)
+            ->first();
 
         return Inertia::render('daily-reports/index', [
             'availableDates' => $availableDates,
             'selectedDate' => $selectedDate,
             'report' => $report,
+            'incidentOptions' => DailyReport::INCIDENTS,
+            'actionOptions' => DailyReport::ACTIONS,
         ]);
     }
 
-    public function generate(Request $request): RedirectResponse
+    /**
+     * Live pull from vCenter (name, host, power state, allocated vCPU/RAM,
+     * guest disk usage, uptime) for every VM. Nothing is saved here — this
+     * only feeds the auto-filled table for the user to review before saving.
+     */
+    public function pull(DailyReportVsphereService $vsphereReportService): JsonResponse
     {
-        $validated = $request->validate([
-            'date' => 'required|date_format:Y-m-d',
-        ]);
-
-        $report = DailyReport::with('items')->whereDate('report_date', $validated['date'])->first();
-
-        if ($report) {
-            $report->update(['summary' => app(DailyReportSummaryService::class)->summarize($report)]);
-        }
-
-        return redirect()->route('daily-reports.index', ['date' => $validated['date']]);
-    }
-
-    public function create(): Response
-    {
-        return Inertia::render('daily-reports/import');
-    }
-
-    public function store(Request $request, DailyReportImportService $importService): RedirectResponse
-    {
-        $validated = $request->validate([
-            'report_date' => 'required|date_format:Y-m-d',
-            'file' => 'required|file|mimes:xlsx,xls,csv|max:10240',
-        ]);
-
         try {
-            $importService->import($validated['file'], $validated['report_date'], Auth::id());
-        } catch (Throwable $e) {
-            return back()->withErrors(['file' => $e->getMessage()])->withInput();
-        }
-
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'นำเข้าข้อมูลรายงานประจำวันสำเร็จ']);
-
-        return redirect()->route('daily-reports.index', ['date' => $validated['report_date']]);
-    }
-
-    public function export(Request $request, DailyReportPdfService $pdfService): HttpResponse
-    {
-        $validated = $request->validate([
-            'date' => 'required|date_format:Y-m-d',
-            'inspector' => 'nullable|string|max:255',
-        ]);
-
-        $report = DailyReport::with('items')
-            ->whereDate('report_date', $validated['date'])
-            ->firstOrFail();
-
-        $data = $pdfService->buildData($report);
-
-        // A report reviewed/saved through the vSphere flow carries the
-        // human-ticked checklist and verdict — prefer those over the
-        // freshly recomputed ones so the PDF matches what was saved.
-        if ($report->checklist !== null) {
-            $data['checklist'] = $report->checklist;
-        }
-
-        if ($report->overall_normal !== null) {
-            $data['overallNormal'] = $report->overall_normal;
-        }
-
-        if ($report->reason_text !== null) {
-            $data['reasonText'] = $report->reason_text;
-        }
-
-        $data['inspector'] = $validated['inspector'] ?: ($report->inspector ?? '');
-        $data['reportDate'] = $report->report_date->translatedFormat('d/m/Y');
-        $data['generatedAt'] = now()->translatedFormat('d/m/Y H:i');
-        $data['regularFontPath'] = public_path('fonts/sarabun/Sarabun-Regular.ttf');
-        $data['boldFontPath'] = public_path('fonts/sarabun/Sarabun-Bold.ttf');
-
-        $pdf = Pdf::loadView('pdf.daily-report', $data)->setPaper('a4', 'portrait');
-
-        return $pdf->download("daily-vm-report-{$validated['date']}.pdf");
-    }
-
-    public function vspherePreview(Request $request, DailyReportVsphereService $vsphereReportService): JsonResponse
-    {
-        $validated = $request->validate([
-            'date' => 'required|date_format:Y-m-d',
-        ]);
-
-        try {
-            $data = $vsphereReportService->preview($validated['date']);
+            $items = $vsphereReportService->pull();
         } catch (Throwable $e) {
             report($e);
 
             return response()->json(['message' => 'ไม่สามารถดึงข้อมูลจาก vCenter ได้'], 502);
         }
 
-        return response()->json($data);
+        return response()->json(['items' => $items]);
     }
 
-    public function vsphereSave(Request $request, DailyReportImportService $importService): RedirectResponse
+    public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
             'report_date' => 'required|date_format:Y-m-d',
-            'inspector' => 'nullable|string|max:255',
-            'overall_normal' => 'required|boolean',
-            'reason_text' => 'nullable|string',
-            'checklist' => 'required|array|min:1',
-            'checklist.*.label' => 'required|string',
-            'checklist.*.checked' => 'required|boolean',
-            'checklist.*.derivable' => 'required|boolean',
+            'incident' => ['nullable', Rule::in(array_keys(DailyReport::INCIDENTS))],
+            'action' => ['nullable', Rule::in(array_keys(DailyReport::ACTIONS))],
+            'remark' => 'nullable|string|max:2000',
             'items' => 'required|array|min:1',
             'items.*.name' => 'required|string',
             'items.*.host' => 'nullable|string',
-            'items.*.dns' => 'nullable|string',
-            'items.*.state' => 'nullable|string',
-            'items.*.status' => 'nullable|string',
-            'items.*.provisioned_space' => 'nullable|string',
-            'items.*.used_space' => 'nullable|string',
-            'items.*.host_cpu' => 'nullable|string',
-            'items.*.host_mem' => 'nullable|string',
+            'items.*.power_state' => 'nullable|string',
+            'items.*.cpu_count' => 'nullable|integer',
+            'items.*.memory_gb' => 'nullable|numeric',
+            'items.*.disk_usage_pct' => 'nullable|numeric',
+            'items.*.uptime_seconds' => 'nullable|integer',
+            'items.*.certificate_exp' => 'nullable|string|max:255',
+            'items.*.notes' => 'nullable|string',
         ]);
 
-        $importService->persist(
-            $validated['items'],
-            $validated['report_date'],
-            Auth::id(),
-            [
-                'inspector' => $validated['inspector'] ?? null,
-                'checklist' => $validated['checklist'],
-                'overall_normal' => $validated['overall_normal'],
-                'reason_text' => $validated['reason_text'] ?? null,
-                'source' => 'vsphere',
-            ]
-        );
+        DB::transaction(function () use ($validated) {
+            $report = DailyReport::updateOrCreate(
+                ['report_date' => $validated['report_date']],
+                [
+                    'created_by' => Auth::id(),
+                    'incident' => $validated['incident'] ?? null,
+                    'action' => $validated['action'] ?? null,
+                    'remark' => $validated['remark'] ?? null,
+                ]
+            );
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'บันทึกรายงานประจำวันสำเร็จ']);
+            $report->items()->delete();
+
+            foreach (array_chunk($validated['items'], 500) as $chunk) {
+                $chunk = array_map(fn ($item) => [
+                    'daily_report_id' => $report->id,
+                    'name' => $item['name'],
+                    'host' => $item['host'] ?? null,
+                    'power_state' => $item['power_state'] ?? null,
+                    'cpu_count' => $item['cpu_count'] ?? null,
+                    'memory_gb' => $item['memory_gb'] ?? null,
+                    'disk_usage_pct' => $item['disk_usage_pct'] ?? null,
+                    'uptime_seconds' => $item['uptime_seconds'] ?? null,
+                    'certificate_exp' => $item['certificate_exp'] ?? null,
+                    'notes' => $item['notes'] ?? null,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ], $chunk);
+
+                DailyReportItem::insert($chunk);
+            }
+        });
 
         return redirect()->route('daily-reports.index', ['date' => $validated['report_date']]);
+    }
+
+    /**
+     * Exports every saved report within the given date range as one PDF,
+     * a page per date (dates with no saved report are skipped).
+     */
+    public function export(Request $request, DailyReportPdfService $pdfService): HttpResponse
+    {
+        $validated = $request->validate([
+            'start_date' => 'required|date_format:Y-m-d',
+            'end_date' => 'required|date_format:Y-m-d|after_or_equal:start_date',
+        ]);
+
+        $reports = DailyReport::with('items')
+            ->whereBetween('report_date', [$validated['start_date'], $validated['end_date']])
+            ->orderBy('report_date')
+            ->get();
+
+        if ($reports->isEmpty()) {
+            return back()->withErrors(['start_date' => 'ไม่พบรายงานที่บันทึกไว้ในช่วงวันที่ที่เลือก']);
+        }
+
+        $pages = $reports->map(fn (DailyReport $report) => $pdfService->buildData($report));
+
+        $pdf = Pdf::loadView('pdf.daily-report', [
+            'pages' => $pages,
+            'generatedAt' => now()->translatedFormat('d/m/Y H:i'),
+            'regularFontPath' => public_path('fonts/sarabun/Sarabun-Regular.ttf'),
+            'boldFontPath' => public_path('fonts/sarabun/Sarabun-Bold.ttf'),
+        ])->setPaper('a4', 'portrait');
+
+        $filename = $validated['start_date'] === $validated['end_date']
+            ? "daily-vm-report-{$validated['start_date']}.pdf"
+            : "daily-vm-report-{$validated['start_date']}_to_{$validated['end_date']}.pdf";
+
+        return $pdf->download($filename);
     }
 }

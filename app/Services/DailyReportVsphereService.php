@@ -2,85 +2,91 @@
 
 namespace App\Services;
 
-use App\Models\DailyReport;
-use App\Models\DailyReportItem;
+use App\Models\Vm;
+use Carbon\Carbon;
+use Illuminate\Support\Str;
 
 class DailyReportVsphereService
 {
     public function __construct(
         protected VsphereService $vsphere,
-        protected DailyReportPdfService $pdfService,
     ) {}
 
     /**
-     * Builds the same report view-model as DailyReportPdfService::buildData(),
-     * but sourced live from vCenter instead of imported DailyReportItem rows.
-     * Nothing is persisted here — this is a preview the user reviews and
-     * edits (checklist, verdict, inspector) before explicitly saving.
+     * Builds one snapshot row per Active VM (per the Manage VMs inventory),
+     * live from vCenter: power state (UP/DOWN), allocated vCPU/memory, and
+     * — for powered-on VMs — guest disk usage and uptime, plus the
+     * inventory's own Certificate Exp and Note. Nothing is persisted here;
+     * the caller decides whether/when to save the result.
+     *
+     * The Active list in the VMs inventory is the source of truth for
+     * which machines count toward the report — not vCenter's live list —
+     * so an Active VM that vCenter doesn't currently return (renamed,
+     * removed, momentarily unreachable) still appears here, counted as
+     * down, rather than silently vanishing from the total.
+     *
+     * @return array<int, array<string, mixed>>
      */
-    public function preview(string $reportDate): array
+    public function pull(): array
     {
-        $vms = $this->vsphere->getVms();
-        $hosts = $this->vsphere->getHosts();
         $hostMap = $this->vsphere->getVmHostMap();
-        $allHostsConnected = collect($hosts)->isNotEmpty()
-            && collect($hosts)->every(fn ($host) => ($host['connection_state'] ?? null) === 'CONNECTED');
 
-        $items = collect($vms)
+        $liveByName = collect($this->vsphere->getVms())
+            ->keyBy(fn (array $vm) => Str::lower(trim($vm['name'] ?? '')));
+
+        $activeVms = Vm::where('is_active', true)->get(['name', 'certificate_exp', 'notes']);
+
+        $matches = $activeVms->map(fn (Vm $vm) => [
+            'vm' => $vm,
+            'live' => $liveByName->get(Str::lower(trim($vm->name))),
+        ]);
+
+        $poweredOnIds = $matches
+            ->filter(fn (array $m) => ($m['live']['power_state'] ?? null) === 'POWERED_ON')
+            ->pluck('live.vm')
+            ->all();
+
+        $guestSnapshots = $this->vsphere->getVmGuestSnapshots($poweredOnIds);
+
+        return $matches
+            ->map(function (array $m) use ($hostMap, $guestSnapshots) {
+                $vm = $m['vm'];
+                $live = $m['live'];
+
+                if ($live === null) {
+                    return [
+                        'name' => $vm->name,
+                        'host' => null,
+                        'power_state' => null,
+                        'cpu_count' => null,
+                        'memory_gb' => null,
+                        'disk_usage_pct' => null,
+                        'uptime_seconds' => null,
+                        'certificate_exp' => $vm->certificate_exp,
+                        'notes' => $vm->notes,
+                    ];
+                }
+
+                $guest = $guestSnapshots[$live['vm']] ?? ['boot_time' => null, 'disk_usage_pct' => null];
+
+                return [
+                    'name' => $live['name'],
+                    'host' => $hostMap[$live['vm']] ?? null,
+                    'power_state' => $live['power_state'] ?? null,
+                    'cpu_count' => $live['cpu_count'] ?? null,
+                    'memory_gb' => isset($live['memory_size_MiB'])
+                        ? round($live['memory_size_MiB'] / 1024, 2)
+                        : null,
+                    'disk_usage_pct' => $guest['disk_usage_pct'],
+                    'uptime_seconds' => $guest['boot_time']
+                        ? max(0, Carbon::parse($guest['boot_time'])->diffInSeconds(now()))
+                        : null,
+                    'certificate_exp' => $vm->certificate_exp,
+                    'notes' => $vm->notes,
+                ];
+            })
+            ->sortBy('name')
             ->values()
-            ->map(function (array $vm, int $index) use ($hostMap) {
-                $item = new DailyReportItem([
-                    'name' => $vm['name'],
-                    'host' => $hostMap[$vm['vm']] ?? null,
-                    'dns' => null,
-                    'state' => strtolower($vm['power_state'] ?? ''),
-                    'status' => null,
-                    'provisioned_space' => null,
-                    'used_space' => null,
-                    'host_cpu' => null,
-                    'host_mem' => null,
-                ]);
-
-                // Synthetic id: DailyReportPdfService matches findings back to
-                // rows by id, which only works if these unsaved rows have one.
-                $item->id = $index + 1;
-
-                return $item;
-            });
-
-        $report = new DailyReport(['report_date' => $reportDate]);
-        $report->setRelation('items', $items);
-
-        $data = $this->pdfService->buildData($report);
-
-        // DailyReportPdfService's checklist is built for Excel-imported rows.
-        // A vSphere-sourced report has no per-VM CPU/Mem/storage data, so
-        // those three would silently read "checked" (no findings raised)
-        // even though nothing was actually verified — mark them honestly as
-        // not derivable instead. Host connection_state IS real data here
-        // (unlike the Excel path), so Network Connectivity can be upgraded
-        // to an actual check. Indices below match the fixed order
-        // DailyReportPdfService::buildData() always builds the checklist in.
-        $checklist = $data['checklist'];
-        $checklist[1]['derivable'] = true; // Network Connectivity
-        $checklist[1]['checked'] = $allHostsConnected;
-        $checklist[2]['derivable'] = false; // CPU Usage
-        $checklist[2]['checked'] = false;
-        $checklist[3]['derivable'] = false; // Memory Usage
-        $checklist[3]['checked'] = false;
-        $checklist[4]['derivable'] = false; // Storage
-        $checklist[4]['checked'] = false;
-        $data['checklist'] = $checklist;
-
-        $derivableAllChecked = collect($checklist)->where('derivable', true)->every(fn ($c) => $c['checked']);
-        $data['overallNormal'] = collect($data['problemVms'])->isEmpty() && $derivableAllChecked;
-
-        $data['reportDate'] = $reportDate;
-        $data['items'] = $items->map(fn (DailyReportItem $item) => $item->only([
-            'name', 'host', 'dns', 'state', 'status',
-            'provisioned_space', 'used_space', 'host_cpu', 'host_mem',
-        ]))->values();
-
-        return $data;
+            ->all();
     }
 }

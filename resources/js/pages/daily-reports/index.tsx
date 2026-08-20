@@ -1,7 +1,8 @@
 import type { RequestPayload } from '@inertiajs/core';
-import { Head, Link, router } from '@inertiajs/react';
-import { Cloud, FileDown, Printer, Save, Sparkles, Upload } from 'lucide-react';
-import { useState } from 'react';
+import { Head, router, usePage } from '@inertiajs/react';
+import { Cloud, FileDown, Save } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -14,109 +15,85 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
+import { notifyError, notifyInfo, notifySuccess } from '@/lib/swal';
 
-interface DailyReportItem {
-    id: number;
+interface ReportRow {
+    id?: number;
     name: string;
     host: string | null;
-    dns: string | null;
-    state: string | null;
-    status: string | null;
-    provisioned_space: string | null;
-    used_space: string | null;
-    host_cpu: string | null;
-    host_mem: string | null;
+    power_state: string | null;
+    cpu_count: number | null;
+    memory_gb: number | null;
+    disk_usage_pct: number | null;
+    uptime_seconds: number | null;
+    certificate_exp: string | null;
+    notes: string | null;
 }
 
 interface DailyReport {
     id: number;
     report_date: string;
-    original_filename: string | null;
-    summary: string | null;
-    items: DailyReportItem[];
+    incident: string | null;
+    action: string | null;
+    remark: string | null;
+    items: ReportRow[];
 }
 
 interface Props {
     availableDates: string[];
-    selectedDate: string | null;
+    selectedDate: string;
     report: DailyReport | null;
+    incidentOptions: Record<string, string>;
+    actionOptions: Record<string, string>;
 }
 
-interface VsphereChecklistItem {
-    label: string;
-    derivable: boolean;
-    checked: boolean;
+const NONE = 'none';
+
+function isUp(row: ReportRow): boolean {
+    return row.power_state === 'POWERED_ON';
 }
 
-interface VsphereHostRow {
-    host: string;
-    total: number;
-    online: number;
-    pass: boolean;
-}
-
-interface VsphereProblemVm {
-    host: string;
-    name: string;
-    dns: string;
-    status: string;
-    remark: string;
-}
-
-interface VsphereReportRow {
-    name: string;
-    host: string | null;
-    dns: string | null;
-    state: string | null;
-    status: string | null;
-    provisioned_space: string | null;
-    used_space: string | null;
-    host_cpu: string | null;
-    host_mem: string | null;
-}
-
-interface VsphereReportPreview {
-    total: number;
-    poweredOn: number;
-    poweredOff: number;
-    availabilityPct: number;
-    hostRows: VsphereHostRow[];
-    checklist: VsphereChecklistItem[];
-    problemVms: VsphereProblemVm[];
-    overallNormal: boolean;
-    reasonText: string;
-    reportDate: string;
-    items: VsphereReportRow[];
-}
-
-function isAbnormalStatus(status: string | null): boolean {
-    if (!status) {
-        return false;
+function formatUptime(seconds: number | null): string {
+    if (seconds === null) {
+        return '-';
     }
 
-    const s = status.toLowerCase();
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
 
-    return !['ok', 'normal', 'good', 'healthy', 'green', 'ปกติ'].some((ok) =>
-        s.includes(ok),
-    );
-}
-
-function isDownState(state: string | null): boolean {
-    if (!state) {
-        return false;
+    if (days > 0) {
+        return `${days}d ${hours}h`;
     }
 
-    const s = state.toLowerCase();
+    if (hours > 0) {
+        return `${hours}h ${minutes}m`;
+    }
 
-    return [
-        'stop',
-        'off',
-        'disconnect',
-        'error',
-        'fail',
-        'invalid',
-        'unknown',
-    ].some((kw) => s.includes(kw));
+    return `${minutes}m`;
+}
+
+function diskBadgeClass(pct: number | null): string {
+    if (pct === null) {
+        return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400';
+    }
+
+    if (pct >= 85) {
+        return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+    }
+
+    if (pct >= 70) {
+        return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400';
+    }
+
+    return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
 }
 
 function getCsrfToken(): string {
@@ -125,139 +102,110 @@ function getCsrfToken(): string {
     return match ? decodeURIComponent(match[1]) : '';
 }
 
-export default function Index({ availableDates, selectedDate, report }: Props) {
-    const [date, setDate] = useState(selectedDate ?? '');
-    const [generating, setGenerating] = useState(false);
-    const [exportOpen, setExportOpen] = useState(false);
-    const [inspector, setInspector] = useState('');
+export default function Index({
+    availableDates,
+    selectedDate,
+    report,
+    incidentOptions,
+    actionOptions,
+}: Props) {
+    const { errors } = usePage().props as unknown as {
+        errors?: Record<string, string>;
+    };
 
-    const [vspherePreview, setVspherePreview] =
-        useState<VsphereReportPreview | null>(null);
-    const [vsphereLoading, setVsphereLoading] = useState(false);
-    const [vsphereError, setVsphereError] = useState<string | null>(null);
-    const [vsphereSaving, setVsphereSaving] = useState(false);
-    const [vsphereInspector, setVsphereInspector] = useState('');
-    const [vsphereChecklist, setVsphereChecklist] = useState<
-        VsphereChecklistItem[]
-    >([]);
-    const [vsphereOverallNormal, setVsphereOverallNormal] = useState(true);
-    const [vsphereReasonText, setVsphereReasonText] = useState('');
+    const [date, setDate] = useState(selectedDate);
+    const [exportOpen, setExportOpen] = useState(false);
+    const [exportStart, setExportStart] = useState(selectedDate);
+    const [exportEnd, setExportEnd] = useState(selectedDate);
+
+    // A failed export redirects back with a flashed validation error via a
+    // plain browser navigation (window.location.href, not an Inertia visit),
+    // so the app remounts fresh with that error already in props — a
+    // mount-only effect is the right place to surface it, same pattern as
+    // the app-wide flash-toast listener.
+    useEffect(() => {
+        if (errors?.start_date) {
+            notifyError(errors.start_date, 'ส่งออก PDF ไม่สำเร็จ');
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const goToDate = (value: string) => {
         setDate(value);
         router.get('/daily-reports', { date: value }, { preserveState: true });
     };
 
-    const handleGenerate = () => {
-        if (!date) {
-            return;
-        }
-
-        setGenerating(true);
-        router.post(
-            '/daily-reports/generate',
-            { date },
-            { preserveScroll: true, onFinish: () => setGenerating(false) },
-        );
-    };
-
     const handleExport = () => {
-        const params = new URLSearchParams({ date, inspector });
+        const params = new URLSearchParams({
+            start_date: exportStart,
+            end_date: exportEnd,
+        });
+        notifyInfo('กำลังสร้างไฟล์ PDF และเริ่มดาวน์โหลด...', 'กำลังดำเนินการ');
         window.location.href = `/daily-reports/export?${params.toString()}`;
         setExportOpen(false);
-    };
-
-    const handleGenerateFromVsphere = async () => {
-        if (!date) {
-            return;
-        }
-
-        setVsphereLoading(true);
-        setVsphereError(null);
-
-        try {
-            const response = await fetch('/daily-reports/vsphere/preview', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json',
-                    'X-XSRF-TOKEN': getCsrfToken(),
-                },
-                body: JSON.stringify({ date }),
-            });
-
-            if (!response.ok) {
-                throw new Error('vsphere preview failed');
-            }
-
-            const data: VsphereReportPreview = await response.json();
-
-            setVspherePreview(data);
-            setVsphereChecklist(data.checklist);
-            setVsphereOverallNormal(data.overallNormal);
-            setVsphereReasonText(data.reasonText);
-            setVsphereInspector('');
-        } catch {
-            setVsphereError('ไม่สามารถสร้างรายงานจาก vCenter ได้');
-        } finally {
-            setVsphereLoading(false);
-        }
-    };
-
-    const handleSaveVsphereReport = () => {
-        if (!vspherePreview) {
-            return;
-        }
-
-        setVsphereSaving(true);
-        router.post(
-            '/daily-reports/vsphere/save',
-            {
-                report_date: vspherePreview.reportDate,
-                inspector: vsphereInspector,
-                overall_normal: vsphereOverallNormal,
-                reason_text: vsphereOverallNormal ? '' : vsphereReasonText,
-                checklist: vsphereChecklist,
-                items: vspherePreview.items,
-                // Inertia's FormDataConvertible constraint requires an
-                // explicit index signature, which named interfaces don't
-                // structurally provide — the payload itself is plain JSON.
-            } as unknown as RequestPayload,
-            {
-                preserveScroll: true,
-                onSuccess: () => setVspherePreview(null),
-                onFinish: () => setVsphereSaving(false),
-            },
-        );
-    };
-
-    const toggleChecklistItem = (index: number) => {
-        setVsphereChecklist((prev) =>
-            prev.map((item, i) =>
-                i === index ? { ...item, checked: !item.checked } : item,
-            ),
-        );
     };
 
     return (
         <>
             <Head title="Daily Report" />
-            <style>{`
-                @media print {
-                    body * { visibility: hidden; }
-                    #vsphere-report-print, #vsphere-report-print * { visibility: visible; }
-                    #vsphere-report-print { position: absolute; left: 0; top: 0; width: 100%; }
-                }
-            `}</style>
             <div className="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
+                <div className="flex flex-wrap items-center justify-between gap-4">
                     <h1 className="text-2xl font-bold">Daily Report</h1>
-                    <Button asChild>
-                        <Link href="/daily-reports/import">
-                            <Upload className="mr-2 h-4 w-4" />
-                            Import Daily Report
-                        </Link>
-                    </Button>
+
+                    <Dialog open={exportOpen} onOpenChange={setExportOpen}>
+                        <DialogTrigger asChild>
+                            <Button variant="outline">
+                                <FileDown className="mr-2 h-4 w-4" />
+                                Export PDF
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                            <DialogHeader>
+                                <DialogTitle>
+                                    Export Daily Report เป็น PDF
+                                </DialogTitle>
+                            </DialogHeader>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="export-start">
+                                        ตั้งแต่วันที่
+                                    </Label>
+                                    <Input
+                                        id="export-start"
+                                        type="date"
+                                        value={exportStart}
+                                        onChange={(e) =>
+                                            setExportStart(e.target.value)
+                                        }
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="export-end">
+                                        ถึงวันที่
+                                    </Label>
+                                    <Input
+                                        id="export-end"
+                                        type="date"
+                                        value={exportEnd}
+                                        onChange={(e) =>
+                                            setExportEnd(e.target.value)
+                                        }
+                                    />
+                                </div>
+                            </div>
+                            {errors?.start_date && (
+                                <p className="text-sm text-red-500">
+                                    {errors.start_date}
+                                </p>
+                            )}
+                            <DialogFooter>
+                                <Button onClick={handleExport}>
+                                    <FileDown className="mr-2 h-4 w-4" />
+                                    ดาวน์โหลด PDF
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
                 </div>
 
                 <Card>
@@ -272,60 +220,6 @@ export default function Index({ availableDates, selectedDate, report }: Props) {
                                 onChange={(e) => goToDate(e.target.value)}
                             />
                         </div>
-                        <Button
-                            variant="outline"
-                            onClick={handleGenerate}
-                            disabled={generating || !report}
-                        >
-                            <Sparkles
-                                className={`mr-2 h-4 w-4 ${generating ? 'animate-pulse' : ''}`}
-                            />
-                            {generating
-                                ? 'กำลังสร้างรายงาน...'
-                                : 'Generate Report'}
-                        </Button>
-
-                        <Button
-                            variant="outline"
-                            onClick={handleGenerateFromVsphere}
-                            disabled={vsphereLoading || !date}
-                        >
-                            <Cloud
-                                className={`mr-2 h-4 w-4 ${vsphereLoading ? 'animate-pulse' : ''}`}
-                            />
-                            {vsphereLoading
-                                ? 'กำลังดึงข้อมูล...'
-                                : 'Generate from vCenter'}
-                        </Button>
-
-                        <Dialog open={exportOpen} onOpenChange={setExportOpen}>
-                            <DialogTrigger asChild>
-                                <Button variant="outline" disabled={!report}>
-                                    <FileDown className="mr-2 h-4 w-4" />
-                                    Export PDF
-                                </Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                                <DialogHeader>
-                                    <DialogTitle>Export Daily Report เป็น PDF</DialogTitle>
-                                </DialogHeader>
-                                <div className="space-y-2">
-                                    <Label htmlFor="inspector">ผู้ตรวจสอบ</Label>
-                                    <Input
-                                        id="inspector"
-                                        value={inspector}
-                                        onChange={(e) => setInspector(e.target.value)}
-                                        placeholder="ชื่อผู้ตรวจสอบ"
-                                    />
-                                </div>
-                                <DialogFooter>
-                                    <Button onClick={handleExport}>
-                                        <FileDown className="mr-2 h-4 w-4" />
-                                        ดาวน์โหลด PDF
-                                    </Button>
-                                </DialogFooter>
-                            </DialogContent>
-                        </Dialog>
 
                         {availableDates.length > 0 && (
                             <div className="ml-auto flex flex-wrap gap-2">
@@ -347,448 +241,303 @@ export default function Index({ availableDates, selectedDate, report }: Props) {
                     </CardContent>
                 </Card>
 
-                {vsphereError && (
-                    <Card className="border-l-4 border-l-red-500">
-                        <CardContent className="pt-6">
-                            <p className="text-sm text-red-600 dark:text-red-400">
-                                {vsphereError}
-                            </p>
-                        </CardContent>
-                    </Card>
-                )}
-
-                {vspherePreview && (
-                    <Card>
-                        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
-                            <CardTitle>
-                                ร่างรายงานจาก vCenter (ยังไม่บันทึก)
-                            </CardTitle>
-                            <div className="flex flex-wrap gap-2">
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => window.print()}
-                                >
-                                    <Printer className="mr-2 h-4 w-4" />
-                                    Print
-                                </Button>
-                                <Button
-                                    size="sm"
-                                    onClick={handleSaveVsphereReport}
-                                    disabled={vsphereSaving}
-                                >
-                                    <Save className="mr-2 h-4 w-4" />
-                                    {vsphereSaving
-                                        ? 'กำลังบันทึก...'
-                                        : 'บันทึกลงฐานข้อมูล'}
-                                </Button>
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => setVspherePreview(null)}
-                                >
-                                    ยกเลิก
-                                </Button>
-                            </div>
-                        </CardHeader>
-                        <CardContent>
-                            <div
-                                id="vsphere-report-print"
-                                className="mx-auto max-w-3xl space-y-4 rounded-lg border bg-white p-6 text-black"
-                            >
-                                <div className="text-center">
-                                    <h2 className="text-lg font-bold">
-                                        รายงานการตรวจสอบระบบ Virtual Machine
-                                        ประจำวัน
-                                    </h2>
-                                    <p className="font-semibold">
-                                        Daily VM Health Check Report
-                                    </p>
-                                </div>
-
-                                <div className="flex flex-wrap items-center gap-4 text-sm">
-                                    <div className="flex items-center gap-2">
-                                        <span className="font-semibold">
-                                            ผู้ตรวจสอบ
-                                        </span>
-                                        <Input
-                                            className="h-8 w-48 text-black"
-                                            value={vsphereInspector}
-                                            onChange={(e) =>
-                                                setVsphereInspector(
-                                                    e.target.value,
-                                                )
-                                            }
-                                            placeholder="ชื่อผู้ตรวจสอบ"
-                                        />
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="font-semibold">
-                                            รอบการตรวจ
-                                        </span>
-                                        <span className="rounded-full bg-gray-200 px-3 py-0.5">
-                                            Daily
-                                        </span>
-                                    </div>
-                                    <span className="ml-auto">
-                                        วันที่: {vspherePreview.reportDate}
-                                    </span>
-                                </div>
-
-                                <table className="w-full border-collapse text-sm">
-                                    <caption className="border border-gray-400 bg-gray-100 px-2 py-1 text-left font-semibold">
-                                        สรุปสถานะ VM
-                                    </caption>
-                                    <thead>
-                                        <tr className="bg-gray-50">
-                                            <th className="border border-gray-400 px-2 py-1">
-                                                VM ทั้งหมด
-                                            </th>
-                                            <th className="border border-gray-400 px-2 py-1">
-                                                Powered On
-                                            </th>
-                                            <th className="border border-gray-400 px-2 py-1">
-                                                Powered Off
-                                            </th>
-                                            <th className="border border-gray-400 px-2 py-1">
-                                                Availability
-                                            </th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr className="text-center">
-                                            <td className="border border-gray-400 px-2 py-1">
-                                                {vspherePreview.total} เครื่อง
-                                            </td>
-                                            <td className="border border-gray-400 px-2 py-1">
-                                                {vspherePreview.poweredOn}{' '}
-                                                เครื่อง
-                                            </td>
-                                            <td className="border border-gray-400 px-2 py-1">
-                                                {vspherePreview.poweredOff}{' '}
-                                                เครื่อง
-                                            </td>
-                                            <td className="border border-gray-400 px-2 py-1">
-                                                {vspherePreview.availabilityPct}
-                                                %
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-
-                                <table className="w-full border-collapse text-sm">
-                                    <caption className="border border-gray-400 bg-gray-100 px-2 py-1 text-left font-semibold">
-                                        ตรวจสอบสถานะ Host
-                                    </caption>
-                                    <thead>
-                                        <tr className="bg-gray-50">
-                                            <th className="border border-gray-400 px-2 py-1">
-                                                Host
-                                            </th>
-                                            <th className="border border-gray-400 px-2 py-1">
-                                                VM ทั้งหมด
-                                            </th>
-                                            <th className="border border-gray-400 px-2 py-1">
-                                                ผลตรวจ
-                                            </th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {vspherePreview.hostRows.map((row) => (
-                                            <tr
-                                                key={row.host}
-                                                className="text-center"
-                                            >
-                                                <td className="border border-gray-400 px-2 py-1">
-                                                    {row.host}
-                                                </td>
-                                                <td className="border border-gray-400 px-2 py-1">
-                                                    {row.total}
-                                                </td>
-                                                <td className="border border-gray-400 px-2 py-1">
-                                                    {row.pass
-                                                        ? 'ปกติ'
-                                                        : 'พบปัญหา'}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-
-                                <div>
-                                    <p className="mb-1 font-semibold">
-                                        Checklist ตรวจสอบ VM ประจำวัน
-                                    </p>
-                                    <div className="space-y-1">
-                                        {vsphereChecklist.map(
-                                            (item, index) => (
-                                                <label
-                                                    key={item.label}
-                                                    className="flex items-center gap-2 text-sm"
-                                                >
-                                                    <input
-                                                        type="checkbox"
-                                                        className="h-4 w-4"
-                                                        checked={item.checked}
-                                                        onChange={() =>
-                                                            toggleChecklistItem(
-                                                                index,
-                                                            )
-                                                        }
-                                                    />
-                                                    <span>{item.label}</span>
-                                                    {!item.derivable && (
-                                                        <span className="text-xs text-gray-500">
-                                                            (ไม่มีข้อมูลตรวจสอบอัตโนมัติ
-                                                            — โปรดตรวจด้วยตนเอง)
-                                                        </span>
-                                                    )}
-                                                </label>
-                                            ),
-                                        )}
-                                    </div>
-                                </div>
-
-                                <table className="w-full border-collapse text-sm">
-                                    <caption className="border border-gray-400 bg-gray-100 px-2 py-1 text-left font-semibold">
-                                        VM ที่พบปัญหา
-                                    </caption>
-                                    <thead>
-                                        <tr className="bg-gray-50">
-                                            <th className="border border-gray-400 px-2 py-1">
-                                                Host
-                                            </th>
-                                            <th className="border border-gray-400 px-2 py-1">
-                                                VM Name
-                                            </th>
-                                            <th className="border border-gray-400 px-2 py-1">
-                                                Status
-                                            </th>
-                                            <th className="border border-gray-400 px-2 py-1">
-                                                หมายเหตุ
-                                            </th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {vspherePreview.problemVms.length ===
-                                        0 ? (
-                                            <tr>
-                                                <td
-                                                    colSpan={4}
-                                                    className="border border-gray-400 px-2 py-1 text-center"
-                                                >
-                                                    -
-                                                </td>
-                                            </tr>
-                                        ) : (
-                                            vspherePreview.problemVms.map(
-                                                (vm, i) => (
-                                                    <tr
-                                                        key={`${vm.name}-${i}`}
-                                                        className="text-center"
-                                                    >
-                                                        <td className="border border-gray-400 px-2 py-1">
-                                                            {vm.host}
-                                                        </td>
-                                                        <td className="border border-gray-400 px-2 py-1">
-                                                            {vm.name}
-                                                        </td>
-                                                        <td className="border border-gray-400 px-2 py-1">
-                                                            {vm.status}
-                                                        </td>
-                                                        <td className="border border-gray-400 px-2 py-1">
-                                                            {vm.remark}
-                                                        </td>
-                                                    </tr>
-                                                ),
-                                            )
-                                        )}
-                                    </tbody>
-                                </table>
-
-                                <div className="flex flex-wrap items-center gap-4 text-sm">
-                                    <span className="font-semibold">
-                                        สรุปผลการตรวจสอบ
-                                    </span>
-                                    <label className="flex items-center gap-2">
-                                        <input
-                                            type="checkbox"
-                                            className="h-4 w-4"
-                                            checked={vsphereOverallNormal}
-                                            onChange={() =>
-                                                setVsphereOverallNormal(true)
-                                            }
-                                        />
-                                        ปกติ
-                                    </label>
-                                    <label className="flex items-center gap-2">
-                                        <input
-                                            type="checkbox"
-                                            className="h-4 w-4"
-                                            checked={!vsphereOverallNormal}
-                                            onChange={() =>
-                                                setVsphereOverallNormal(false)
-                                            }
-                                        />
-                                        ผิดปกติ
-                                    </label>
-                                    <div className="flex min-w-[240px] flex-1 items-center gap-2">
-                                        <span>เพราะ</span>
-                                        <Input
-                                            className="h-8 flex-1 text-black"
-                                            value={vsphereReasonText}
-                                            onChange={(e) =>
-                                                setVsphereReasonText(
-                                                    e.target.value,
-                                                )
-                                            }
-                                            disabled={vsphereOverallNormal}
-                                            placeholder={
-                                                vsphereOverallNormal
-                                                    ? '-'
-                                                    : 'ระบุเหตุผล'
-                                            }
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-                )}
-
-                {!report ? (
-                    <Card>
-                        <CardContent className="pt-6">
-                            <p className="text-sm text-muted-foreground">
-                                {date
-                                    ? `ไม่พบข้อมูลรายงานสำหรับวันที่ ${date} กรุณา Import ข้อมูลก่อน หรือกด Generate from vCenter`
-                                    : 'กรุณาเลือกวันที่เพื่อดูรายงาน หรือ Import ข้อมูลใหม่'}
-                            </p>
-                        </CardContent>
-                    </Card>
-                ) : (
-                    <>
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>สรุปรายงาน (AI Summary)</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <pre className="font-sans text-sm leading-relaxed whitespace-pre-wrap">
-                                    {report.summary}
-                                </pre>
-                                {report.original_filename && (
-                                    <p className="mt-4 text-xs text-muted-foreground">
-                                        ที่มาไฟล์: {report.original_filename}
-                                    </p>
-                                )}
-                            </CardContent>
-                        </Card>
-
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>
-                                    รายละเอียดทั้งหมด ({report.items.length}{' '}
-                                    รายการ)
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-left text-sm">
-                                        <thead className="bg-muted/50 text-xs text-muted-foreground uppercase">
-                                            <tr>
-                                                <th className="px-4 py-2 font-medium">
-                                                    Name
-                                                </th>
-                                                <th className="px-4 py-2 font-medium">
-                                                    Host
-                                                </th>
-                                                <th className="px-4 py-2 font-medium">
-                                                    DNS
-                                                </th>
-                                                <th className="px-4 py-2 font-medium">
-                                                    State
-                                                </th>
-                                                <th className="px-4 py-2 font-medium">
-                                                    Status
-                                                </th>
-                                                <th className="px-4 py-2 font-medium">
-                                                    Provisioned Space
-                                                </th>
-                                                <th className="px-4 py-2 font-medium">
-                                                    Used Space
-                                                </th>
-                                                <th className="px-4 py-2 font-medium">
-                                                    Host CPU
-                                                </th>
-                                                <th className="px-4 py-2 font-medium">
-                                                    Host Mem
-                                                </th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y">
-                                            {report.items.map((item) => (
-                                                <tr
-                                                    key={item.id}
-                                                    className="hover:bg-muted/30"
-                                                >
-                                                    <td className="px-4 py-3 font-medium">
-                                                        {item.name}
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        {item.host || '-'}
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        {item.dns || '-'}
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        <span
-                                                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                                                                isDownState(
-                                                                    item.state,
-                                                                )
-                                                                    ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                                                    : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                                                            }`}
-                                                        >
-                                                            {item.state || '-'}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        <span
-                                                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                                                                isAbnormalStatus(
-                                                                    item.status,
-                                                                )
-                                                                    ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
-                                                                    : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
-                                                            }`}
-                                                        >
-                                                            {item.status || '-'}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        {item.provisioned_space ||
-                                                            '-'}
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        {item.used_space || '-'}
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        {item.host_cpu || '-'}
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        {item.host_mem || '-'}
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    </>
-                )}
+                {/* Keyed by date so navigating to a different day remounts this
+                    form fresh from that day's saved report, instead of an
+                    effect reaching back to resync state from new props. */}
+                <ReportForm
+                    key={selectedDate}
+                    date={selectedDate}
+                    report={report}
+                    incidentOptions={incidentOptions}
+                    actionOptions={actionOptions}
+                />
             </div>
+        </>
+    );
+}
+
+function ReportForm({
+    date,
+    report,
+    incidentOptions,
+    actionOptions,
+}: {
+    date: string;
+    report: DailyReport | null;
+    incidentOptions: Record<string, string>;
+    actionOptions: Record<string, string>;
+}) {
+    const [rows, setRows] = useState<ReportRow[]>(report?.items ?? []);
+    const [pulling, setPulling] = useState(false);
+
+    const [incident, setIncident] = useState(report?.incident ?? NONE);
+    const [action, setAction] = useState(report?.action ?? NONE);
+    const [remark, setRemark] = useState(report?.remark ?? '');
+    const [saving, setSaving] = useState(false);
+
+    const handlePull = async () => {
+        setPulling(true);
+
+        try {
+            const response = await fetch('/daily-reports/pull', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                    'X-XSRF-TOKEN': getCsrfToken(),
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error('pull failed');
+            }
+
+            const data: { items: ReportRow[] } = await response.json();
+            setRows(data.items);
+            notifySuccess(
+                `ดึงข้อมูล ${data.items.length} เครื่องจาก vCenter สำเร็จ`,
+                'ดึงข้อมูลสำเร็จ',
+            );
+        } catch {
+            notifyError(
+                'ไม่สามารถดึงข้อมูลจาก vCenter ได้',
+                'ดึงข้อมูลไม่สำเร็จ',
+            );
+        } finally {
+            setPulling(false);
+        }
+    };
+
+    const handleSave = () => {
+        if (rows.length === 0) {
+            return;
+        }
+
+        setSaving(true);
+        router.post(
+            '/daily-reports',
+            {
+                report_date: date,
+                incident: incident === NONE ? '' : incident,
+                action: action === NONE ? '' : action,
+                remark,
+                items: rows,
+                // Inertia's FormDataConvertible constraint requires an
+                // explicit index signature, which named interfaces don't
+                // structurally provide — the payload itself is plain JSON.
+            } as unknown as RequestPayload,
+            {
+                preserveScroll: true,
+                onSuccess: () =>
+                    notifySuccess('บันทึกรายงานประจำวันสำเร็จ', 'บันทึกสำเร็จ'),
+                onError: (formErrors) => {
+                    const message =
+                        Object.values(formErrors)[0] ??
+                        'กรุณาตรวจสอบข้อมูลอีกครั้ง';
+                    notifyError(message, 'บันทึกไม่สำเร็จ');
+                },
+                onFinish: () => setSaving(false),
+            },
+        );
+    };
+
+    const up = rows.filter(isUp).length;
+
+    return (
+        <>
+            <Card className="flex min-h-0 flex-1 flex-col">
+                <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
+                    <CardTitle>
+                        ข้อมูลอัตโนมัติจาก vCenter
+                        {rows.length > 0 && (
+                            <span className="ml-2 text-sm font-normal text-muted-foreground">
+                                {rows.length} เครื่อง — UP {up} / DOWN{' '}
+                                {rows.length - up}
+                            </span>
+                        )}
+                    </CardTitle>
+                    <Button size="sm" onClick={handlePull} disabled={pulling}>
+                        <Cloud
+                            className={`mr-2 h-4 w-4 ${pulling ? 'animate-pulse' : ''}`}
+                        />
+                        {pulling
+                            ? 'กำลังดึงข้อมูล...'
+                            : 'ดึงข้อมูลล่าสุดจาก vCenter'}
+                    </Button>
+                </CardHeader>
+                <CardContent className="flex min-h-0 flex-1 flex-col">
+                    {rows.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                            {report
+                                ? 'ยังไม่มีข้อมูล VM ในรายงานนี้'
+                                : 'กด "ดึงข้อมูลล่าสุดจาก vCenter" เพื่อดึงสถานะ Server, CPU, RAM, Disk และ Uptime โดยอัตโนมัติ'}
+                        </p>
+                    ) : (
+                        <div className="max-h-80 overflow-auto rounded-md border">
+                            <table className="w-full text-left text-sm">
+                                <thead className="sticky top-0 bg-muted/50 text-xs text-muted-foreground uppercase">
+                                    <tr>
+                                        <th className="px-3 py-2 font-medium">
+                                            Name
+                                        </th>
+                                        <th className="px-3 py-2 font-medium">
+                                            Host
+                                        </th>
+                                        <th className="px-3 py-2 font-medium">
+                                            Status
+                                        </th>
+                                        <th className="px-3 py-2 font-medium">
+                                            CPU
+                                        </th>
+                                        <th className="px-3 py-2 font-medium">
+                                            RAM
+                                        </th>
+                                        <th className="px-3 py-2 font-medium">
+                                            Disk
+                                        </th>
+                                        <th className="px-3 py-2 font-medium">
+                                            Uptime
+                                        </th>
+                                        <th className="px-3 py-2 font-medium">
+                                            Certificate Exp
+                                        </th>
+                                        <th className="px-3 py-2 font-medium">
+                                            Note
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y">
+                                    {rows.map((row, i) => (
+                                        <tr
+                                            key={`${row.name}-${i}`}
+                                            className="hover:bg-muted/30"
+                                        >
+                                            <td className="px-3 py-2 font-medium">
+                                                {row.name}
+                                            </td>
+                                            <td className="px-3 py-2">
+                                                {row.host || '-'}
+                                            </td>
+                                            <td className="px-3 py-2">
+                                                <Badge
+                                                    className={
+                                                        isUp(row)
+                                                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                                            : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                                    }
+                                                >
+                                                    {isUp(row) ? 'UP' : 'DOWN'}
+                                                </Badge>
+                                            </td>
+                                            <td className="px-3 py-2">
+                                                {row.cpu_count !== null
+                                                    ? `${row.cpu_count} vCPU`
+                                                    : '-'}
+                                            </td>
+                                            <td className="px-3 py-2">
+                                                {row.memory_gb !== null
+                                                    ? `${row.memory_gb} GB`
+                                                    : '-'}
+                                            </td>
+                                            <td className="px-3 py-2">
+                                                <Badge
+                                                    className={diskBadgeClass(
+                                                        row.disk_usage_pct,
+                                                    )}
+                                                >
+                                                    {row.disk_usage_pct !== null
+                                                        ? `${row.disk_usage_pct}%`
+                                                        : 'N/A'}
+                                                </Badge>
+                                            </td>
+                                            <td className="px-3 py-2">
+                                                {formatUptime(
+                                                    row.uptime_seconds,
+                                                )}
+                                            </td>
+                                            <td className="px-3 py-2 whitespace-nowrap">
+                                                {row.certificate_exp || '-'}
+                                            </td>
+                                            <td
+                                                className="max-w-[200px] truncate px-3 py-2"
+                                                title={row.notes ?? undefined}
+                                            >
+                                                {row.notes || '-'}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>บันทึกเหตุการณ์ประจำวัน</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-4 sm:grid-cols-3">
+                    <div className="space-y-2">
+                        <Label>Incident (ถ้ามี)</Label>
+                        <Select value={incident} onValueChange={setIncident}>
+                            <SelectTrigger className="w-full">
+                                <SelectValue placeholder="เลือก Incident" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value={NONE}>ไม่มี</SelectItem>
+                                {Object.entries(incidentOptions).map(
+                                    ([value, label]) => (
+                                        <SelectItem key={value} value={value}>
+                                            {label}
+                                        </SelectItem>
+                                    ),
+                                )}
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label>Action</Label>
+                        <Select value={action} onValueChange={setAction}>
+                            <SelectTrigger className="w-full">
+                                <SelectValue placeholder="เลือก Action" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value={NONE}>ไม่มี</SelectItem>
+                                {Object.entries(actionOptions).map(
+                                    ([value, label]) => (
+                                        <SelectItem key={value} value={value}>
+                                            {label}
+                                        </SelectItem>
+                                    ),
+                                )}
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    <div className="space-y-2 sm:col-span-1">
+                        <Label htmlFor="remark">Remark</Label>
+                        <textarea
+                            id="remark"
+                            className="flex min-h-9 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                            rows={1}
+                            value={remark}
+                            onChange={(e) => setRemark(e.target.value)}
+                            placeholder="หมายเหตุเพิ่มเติม"
+                        />
+                    </div>
+                </CardContent>
+                <CardContent className="pt-0">
+                    <Button
+                        onClick={handleSave}
+                        disabled={saving || rows.length === 0}
+                    >
+                        <Save className="mr-2 h-4 w-4" />
+                        {saving ? 'กำลังบันทึก...' : 'บันทึกรายงาน'}
+                    </Button>
+                </CardContent>
+            </Card>
         </>
     );
 }

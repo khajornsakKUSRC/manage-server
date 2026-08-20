@@ -10,13 +10,20 @@ class DailyReportItem extends Model
         'daily_report_id',
         'name',
         'host',
-        'dns',
-        'state',
-        'status',
-        'provisioned_space',
-        'used_space',
-        'host_cpu',
-        'host_mem',
+        'power_state',
+        'cpu_count',
+        'memory_gb',
+        'disk_usage_pct',
+        'uptime_seconds',
+        'certificate_exp',
+        'notes',
+    ];
+
+    protected $casts = [
+        'cpu_count' => 'integer',
+        'memory_gb' => 'float',
+        'disk_usage_pct' => 'float',
+        'uptime_seconds' => 'integer',
     ];
 
     public function dailyReport()

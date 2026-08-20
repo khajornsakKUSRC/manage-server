@@ -10,9 +10,7 @@ class HostController extends Controller
 {
     public function index()
     {
-        return Inertia::render('hosts/index', [
-            'hosts' => Host::withCount('vms')->get(),
-        ]);
+        return Inertia::render('hosts/index');
     }
 
     public function create()

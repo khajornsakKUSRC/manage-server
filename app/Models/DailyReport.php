@@ -6,22 +6,32 @@ use Illuminate\Database\Eloquent\Model;
 
 class DailyReport extends Model
 {
+    public const INCIDENTS = [
+        'network' => 'Network ขัดข้อง',
+        'power' => 'ไฟฟ้าดับ',
+        'hardware' => 'Hardware เสีย',
+        'disk_full' => 'พื้นที่ดิสก์เต็ม',
+        'performance' => 'ประสิทธิภาพลดลง',
+        'application' => 'แอปพลิเคชันขัดข้อง',
+        'security' => 'ปัญหาด้านความปลอดภัย',
+        'other' => 'อื่นๆ',
+    ];
+
+    public const ACTIONS = [
+        'shutdown' => 'Shutdown',
+        'restart' => 'Restart',
+    ];
+
     protected $fillable = [
         'report_date',
-        'original_filename',
-        'imported_by',
-        'inspector',
-        'summary',
-        'checklist',
-        'overall_normal',
-        'reason_text',
-        'source',
+        'created_by',
+        'incident',
+        'action',
+        'remark',
     ];
 
     protected $casts = [
         'report_date' => 'date',
-        'checklist' => 'array',
-        'overall_normal' => 'boolean',
     ];
 
     public function items()
@@ -29,8 +39,8 @@ class DailyReport extends Model
         return $this->hasMany(DailyReportItem::class);
     }
 
-    public function importedBy()
+    public function createdBy()
     {
-        return $this->belongsTo(User::class, 'imported_by');
+        return $this->belongsTo(User::class, 'created_by');
     }
 }

@@ -10,7 +10,7 @@ class VsphereController extends Controller
 {
     public function vms(VsphereService $vsphere): JsonResponse
     {
-        return $this->respond(fn () => $vsphere->getVms());
+        return $this->respond(fn () => $vsphere->getVmsWithHost());
     }
 
     public function hosts(VsphereService $vsphere): JsonResponse
@@ -26,6 +26,11 @@ class VsphereController extends Controller
     public function datastores(VsphereService $vsphere): JsonResponse
     {
         return $this->respond(fn () => $vsphere->getDatastores());
+    }
+
+    public function appliance(VsphereService $vsphere): JsonResponse
+    {
+        return $this->respond(fn () => $vsphere->getApplianceOverview());
     }
 
     /**

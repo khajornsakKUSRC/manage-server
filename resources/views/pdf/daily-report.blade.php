@@ -16,27 +16,33 @@
         src: url('{{ $boldFontPath }}');
     }
     @page {
-        margin: 22px 28px;
+        margin: 20px 26px;
     }
     body {
         font-family: 'Sarabun', sans-serif;
-        font-size: 11px;
+        font-size: 10px;
         color: #111;
+    }
+    .page {
+        page-break-after: always;
+    }
+    .page:last-child {
+        page-break-after: auto;
     }
     h1 {
         text-align: center;
-        font-size: 15px;
+        font-size: 14px;
         margin: 0 0 2px 0;
     }
     h2 {
         text-align: center;
-        font-size: 12px;
+        font-size: 11px;
         font-weight: bold;
-        margin: 0 0 14px 0;
+        margin: 0 0 10px 0;
     }
     .meta-row {
         width: 100%;
-        margin-bottom: 10px;
+        margin-bottom: 8px;
     }
     .meta-row td {
         padding: 2px 4px;
@@ -46,20 +52,14 @@
         font-weight: bold;
         white-space: nowrap;
     }
-    .pill {
-        display: inline-block;
-        background: #e5e5e5;
-        border-radius: 10px;
-        padding: 1px 10px;
-    }
     table.data {
         width: 100%;
         border-collapse: collapse;
-        margin-bottom: 12px;
+        margin-bottom: 8px;
     }
     table.data th, table.data td {
         border: 1px solid #999;
-        padding: 4px 6px;
+        padding: 3px 5px;
         text-align: center;
     }
     table.data thead th {
@@ -70,48 +70,52 @@
         border: 1px solid #999;
         background: #f0f0f0;
         font-weight: bold;
-        padding: 4px 6px;
+        padding: 3px 6px;
         caption-side: top;
+        text-align: left;
     }
-    .section-title {
-        font-weight: bold;
-        margin: 4px 0 6px 0;
-    }
-    .checklist {
-        margin: 0 0 14px 0;
-        padding: 0;
-    }
-    .checklist td {
+    table.vms th, table.vms td {
+        font-size: 8.5px;
         padding: 2px 4px;
-        vertical-align: middle;
     }
-    .box {
+    table.vms td.name {
+        text-align: left;
+    }
+    .status-up {
+        color: #15803d;
+        font-weight: bold;
+    }
+    .status-down {
+        color: #b91c1c;
+        font-weight: bold;
+    }
+    .disk-warning {
+        color: #b45309;
+        font-weight: bold;
+    }
+    .disk-critical {
+        color: #b91c1c;
+        font-weight: bold;
+    }
+    .manual-box {
+        border: 1px solid #999;
+        padding: 6px 8px;
+        margin-top: 4px;
+    }
+    .manual-box .section-title {
+        font-weight: bold;
+        margin-bottom: 4px;
+    }
+    .manual-row {
+        margin: 2px 0;
+    }
+    .manual-label {
+        font-weight: bold;
         display: inline-block;
-        width: 9px;
-        height: 9px;
-        border: 1px solid #333;
-        text-align: center;
-        line-height: 9px;
-        font-size: 8px;
-        margin-right: 6px;
-    }
-    .note {
-        color: #777;
-        font-size: 9px;
-    }
-    .summary-row td {
-        padding: 4px 4px;
-        vertical-align: middle;
-    }
-    .reason-line {
-        margin-top: 6px;
-        border-bottom: 1px solid #999;
-        display: inline-block;
-        min-width: 380px;
-        padding-bottom: 2px;
+        width: 70px;
     }
     .footer {
-        margin-top: 24px;
+        margin-top: 10px;
         font-size: 8px;
         color: #999;
         text-align: right;
@@ -120,136 +124,88 @@
 </head>
 <body>
 
-<h1>รายงานการตรวจสอบระบบ Virtual Machine ประจำวัน</h1>
-<h2>Daily VM Health Check Report</h2>
+@foreach ($pages as $page)
+<div class="page">
+    <h1>รายงานการตรวจสอบระบบ Virtual Machine ประจำวัน</h1>
+    <h2>Daily VM Health Check Report</h2>
 
-<table class="meta-row">
-    <tr>
-        <td class="meta-label">ผู้ตรวจสอบ</td>
-        <td style="width: 35%;">{{ $inspector ?: '-' }}</td>
-        <td class="meta-label">รอบการตรวจ</td>
-        <td><span class="pill">Daily</span></td>
-        <td style="text-align: right;">วันที่: {{ $reportDate }}</td>
-    </tr>
-</table>
+    <table class="meta-row">
+        <tr>
+            <td class="meta-label">วันที่</td>
+            <td>{{ $page['reportDate'] }}</td>
+            <td class="meta-label">บันทึกโดย</td>
+            <td>{{ $page['createdBy'] ?: '-' }}</td>
+        </tr>
+    </table>
 
-<table class="data">
-    <caption>สรุปสถานะ VM</caption>
-    <thead>
-        <tr>
-            <th>VM ทั้งหมด</th>
-            <th>Powered On</th>
-            <th>Powered Off</th>
-            <th>Availability</th>
-            <th>หมายเหตุ</th>
-        </tr>
-    </thead>
-    <tbody>
-        <tr>
-            <td>{{ $total }} เครื่อง</td>
-            <td>{{ $poweredOn }} เครื่อง</td>
-            <td>{{ $poweredOff > 0 ? $poweredOff.' เครื่อง' : '-' }}</td>
-            <td>{{ $availabilityPct }}</td>
-            <td>-</td>
-        </tr>
-    </tbody>
-</table>
-
-<table class="data">
-    <caption>ตรวจสอบสถานะ Host</caption>
-    <thead>
-        <tr>
-            <th>Host</th>
-            <th>Status</th>
-            <th>VM ทั้งหมด (Online)</th>
-            <th>ผลตรวจ</th>
-            <th>หมายเหตุ</th>
-        </tr>
-    </thead>
-    <tbody>
-        @forelse ($hostRows as $row)
+    <table class="data">
+        <caption>สรุปสถานะ VM</caption>
+        <thead>
             <tr>
-                <td>{{ $row['host'] }}</td>
-                <td>-</td>
-                <td>{{ $row['total'] }}</td>
-                <td>{{ $row['pass'] ? 'ปกติ' : 'พบปัญหา' }}</td>
-                <td>-</td>
+                <th>VM ทั้งหมด</th>
+                <th>UP</th>
+                <th>DOWN</th>
+                <th>Availability</th>
             </tr>
-        @empty
+        </thead>
+        <tbody>
             <tr>
-                <td colspan="5">ไม่มีข้อมูล Host</td>
+                <td>{{ $page['total'] }} เครื่อง</td>
+                <td>{{ $page['up'] }} เครื่อง</td>
+                <td>{{ $page['down'] }} เครื่อง</td>
+                <td>{{ $page['availabilityPct'] }}%</td>
             </tr>
-        @endforelse
-    </tbody>
-</table>
+        </tbody>
+    </table>
 
-<div class="section-title">Checklist ตรวจสอบ VM ประจำวัน</div>
-<table class="checklist">
-    @foreach ($checklist as $c)
-        <tr>
-            <td>
-                <span class="box">{{ $c['checked'] ? 'v' : '' }}</span>
-                {{ $c['label'] }}
-                @unless ($c['derivable'])
-                    <span class="note">(ไม่มีข้อมูลตรวจสอบอัตโนมัติ)</span>
-                @endunless
-            </td>
-        </tr>
-    @endforeach
-</table>
-
-<table class="data">
-    <caption>VM ที่พบปัญหา</caption>
-    <thead>
-        <tr>
-            <th>Host</th>
-            <th>VM Name</th>
-            <th>DNS</th>
-            <th>Status</th>
-            <th>หมายเหตุ</th>
-        </tr>
-    </thead>
-    <tbody>
-        @forelse ($problemVms as $vm)
+    <table class="data vms">
+        <caption>ข้อมูล VM (ดึงอัตโนมัติจาก vCenter)</caption>
+        <thead>
             <tr>
-                <td>{{ $vm['host'] }}</td>
-                <td>{{ $vm['name'] }}</td>
-                <td>{{ $vm['dns'] }}</td>
-                <td>{{ $vm['status'] }}</td>
-                <td>{{ $vm['remark'] }}</td>
+                <th>VM Name</th>
+                <th>Host</th>
+                <th>Status</th>
+                <th>CPU</th>
+                <th>RAM</th>
+                <th>Disk Usage</th>
+                <th>Uptime</th>
+                <th>Certificate Exp</th>
+                <th>Note</th>
             </tr>
-        @empty
-            <tr>
-                <td>-</td>
-                <td>-</td>
-                <td>-</td>
-                <td>-</td>
-                <td>-</td>
-            </tr>
-        @endforelse
-    </tbody>
-</table>
+        </thead>
+        <tbody>
+            @forelse ($page['rows'] as $row)
+                <tr>
+                    <td class="name">{{ $row['name'] }}</td>
+                    <td>{{ $row['host'] }}</td>
+                    <td class="{{ $row['up'] ? 'status-up' : 'status-down' }}">{{ $row['up'] ? 'UP' : 'DOWN' }}</td>
+                    <td>{{ $row['cpu_count'] !== null ? $row['cpu_count'].' vCPU' : '-' }}</td>
+                    <td>{{ $row['memory_gb'] !== null ? $row['memory_gb'].' GB' : '-' }}</td>
+                    <td class="{{ $row['disk_level'] === 'critical' ? 'disk-critical' : ($row['disk_level'] === 'warning' ? 'disk-warning' : '') }}">
+                        {{ $row['disk_usage_pct'] !== null ? $row['disk_usage_pct'].'%' : 'N/A' }}
+                    </td>
+                    <td>{{ $row['uptime'] }}</td>
+                    <td>{{ $row['certificate_exp'] }}</td>
+                    <td class="name">{{ $row['notes'] }}</td>
+                </tr>
+            @empty
+                <tr>
+                    <td colspan="9">ไม่มีข้อมูล VM</td>
+                </tr>
+            @endforelse
+        </tbody>
+    </table>
 
-<table class="summary-row">
-    <tr>
-        <td style="font-weight: bold; white-space: nowrap;">สรุปผลการตรวจสอบ</td>
-        <td style="white-space: nowrap;">
-            <span class="box">{{ $overallNormal ? 'v' : '' }}</span> ปกติ
-        </td>
-        <td style="white-space: nowrap;">
-            <span class="box">{{ ! $overallNormal ? 'v' : '' }}</span> ผิดปกติ
-        </td>
-        <td>
-            @if (! $overallNormal)
-                เพราะ <span class="reason-line">{{ $reasonText }}</span>
-            @else
-                เพราะ <span class="reason-line">&nbsp;</span>
-            @endif
-        </td>
-    </tr>
-</table>
+    <div class="manual-box">
+        <div class="section-title">บันทึกเหตุการณ์ประจำวัน</div>
+        <div class="manual-row"><span class="manual-label">Incident:</span> {{ $page['incident'] ?: '-' }}</div>
+        <div class="manual-row"><span class="manual-label">Action:</span> {{ $page['action'] ?: '-' }}</div>
+        <div class="manual-row"><span class="manual-label">Remark:</span> {{ $page['remark'] ?: '-' }}</div>
+    </div>
 
-<div class="footer">สร้างรายงานโดยระบบ Manage-Server เมื่อ {{ $generatedAt }}</div>
+    <div class="footer">สร้างรายงานโดยระบบ Manage-Server เมื่อ {{ $generatedAt }}</div>
+</div>
+@endforeach
 
 </body>
 </html>

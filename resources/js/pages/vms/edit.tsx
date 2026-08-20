@@ -7,20 +7,73 @@ import {
     CardTitle,
     CardFooter,
 } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-export default function Edit({ vm, hosts }: { vm: any; hosts: any[] }) {
+interface VmDetail {
+    id: number;
+    name: string;
+    ip: string | null;
+    dns: string | null;
+    state: string | null;
+    provisioned_space: string | null;
+    used_space: string | null;
+    memory_gb: number | null;
+    cpu_cores: number | null;
+    uptime_seconds: number | null;
+    notes: string | null;
+    certificate_exp: string | null;
+    is_active: boolean;
+    host: { id: number; name: string } | null;
+}
+
+function formatState(state: string | null): string {
+    if (!state) {
+        return 'Unknown';
+    }
+
+    return state
+        .toLowerCase()
+        .split('_')
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+}
+
+function formatUptime(seconds: number | null): string {
+    if (seconds === null) {
+        return '-';
+    }
+
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+
+    if (days > 0) {
+        return `${days}d ${hours}h`;
+    }
+
+    if (hours > 0) {
+        return `${hours}h ${minutes}m`;
+    }
+
+    return `${minutes}m`;
+}
+
+function ReadOnlyField({ label, value }: { label: string; value: string }) {
+    return (
+        <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">{label}</p>
+            <p className="text-sm font-medium">{value}</p>
+        </div>
+    );
+}
+
+export default function Edit({ vm }: { vm: VmDetail }) {
     const { data, setData, put, processing, errors } = useForm({
-        host_id: vm.host_id || '',
-        name: vm.name || '',
-        ip: vm.ip || '',
-        dns: vm.dns || '',
-        state: vm.state || 'running',
-        provisioned_space: vm.provisioned_space || '',
-        used_space: vm.used_space || '',
-        memory_gb: vm.memory_gb || '',
-        cpu_cores: vm.cpu_cores || '',
+        notes: vm.notes || '',
+        certificate_exp: vm.certificate_exp || '',
+        is_active: vm.is_active ?? true,
     });
 
     const submit = (e: React.FormEvent) => {
@@ -40,185 +93,116 @@ export default function Edit({ vm, hosts }: { vm: any; hosts: any[] }) {
                 </div>
 
                 <Card>
+                    <CardHeader>
+                        <CardTitle>ข้อมูลจากระบบ (vCenter)</CardTitle>
+                    </CardHeader>
+                    <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                        <ReadOnlyField label="Name" value={vm.name} />
+                        <ReadOnlyField
+                            label="Host"
+                            value={vm.host?.name || '-'}
+                        />
+                        <ReadOnlyField
+                            label="IP Address"
+                            value={vm.ip || '-'}
+                        />
+                        <ReadOnlyField label="DNS" value={vm.dns || '-'} />
+                        <ReadOnlyField
+                            label="State"
+                            value={formatState(vm.state)}
+                        />
+                        <ReadOnlyField
+                            label="Uptime"
+                            value={formatUptime(vm.uptime_seconds)}
+                        />
+                        <ReadOnlyField
+                            label="Provisioned Space"
+                            value={vm.provisioned_space || '-'}
+                        />
+                        <ReadOnlyField
+                            label="Used Space"
+                            value={vm.used_space || '-'}
+                        />
+                        <ReadOnlyField
+                            label="Memory (GB)"
+                            value={
+                                vm.memory_gb !== null
+                                    ? String(vm.memory_gb)
+                                    : '-'
+                            }
+                        />
+                        <ReadOnlyField
+                            label="CPU Cores"
+                            value={
+                                vm.cpu_cores !== null
+                                    ? String(vm.cpu_cores)
+                                    : '-'
+                            }
+                        />
+                    </CardContent>
+                </Card>
+
+                <Card>
                     <form onSubmit={submit}>
                         <CardHeader>
-                            <CardTitle>VM Details</CardTitle>
+                            <CardTitle>ข้อมูลที่กรอกด้วยตนเอง</CardTitle>
                         </CardHeader>
                         <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                            <div className="col-span-1 space-y-2 md:col-span-2">
-                                <Label htmlFor="host_id">
-                                    Parent Host{' '}
-                                    <span className="text-red-500">*</span>
-                                </Label>
-                                <select
-                                    id="host_id"
-                                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                                    value={data.host_id}
-                                    onChange={(e) =>
-                                        setData('host_id', e.target.value)
-                                    }
-                                    required
-                                >
-                                    <option value="" disabled>
-                                        Select a Host...
-                                    </option>
-                                    {hosts.map((host) => (
-                                        <option key={host.id} value={host.id}>
-                                            {host.name} ({host.ip})
-                                        </option>
-                                    ))}
-                                </select>
-                                {errors.host_id && (
-                                    <p className="text-sm text-red-500">
-                                        {errors.host_id}
-                                    </p>
-                                )}
-                            </div>
-
                             <div className="space-y-2">
-                                <Label htmlFor="name">
-                                    VM Name{' '}
-                                    <span className="text-red-500">*</span>
+                                <Label htmlFor="certificate_exp">
+                                    Certificate Exp
                                 </Label>
                                 <Input
-                                    id="name"
-                                    value={data.name}
-                                    onChange={(e) =>
-                                        setData('name', e.target.value)
-                                    }
-                                    required
-                                />
-                                {errors.name && (
-                                    <p className="text-sm text-red-500">
-                                        {errors.name}
-                                    </p>
-                                )}
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label htmlFor="ip">IP Address</Label>
-                                <Input
-                                    id="ip"
-                                    value={data.ip}
-                                    onChange={(e) =>
-                                        setData('ip', e.target.value)
-                                    }
-                                />
-                                {errors.ip && (
-                                    <p className="text-sm text-red-500">
-                                        {errors.ip}
-                                    </p>
-                                )}
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label htmlFor="dns">DNS</Label>
-                                <Input
-                                    id="dns"
-                                    value={data.dns}
-                                    onChange={(e) =>
-                                        setData('dns', e.target.value)
-                                    }
-                                />
-                                {errors.dns && (
-                                    <p className="text-sm text-red-500">
-                                        {errors.dns}
-                                    </p>
-                                )}
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label htmlFor="state">State</Label>
-                                <select
-                                    id="state"
-                                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                                    value={data.state}
-                                    onChange={(e) =>
-                                        setData('state', e.target.value)
-                                    }
-                                >
-                                    <option value="running">Running</option>
-                                    <option value="stopped">Stopped</option>
-                                    <option value="suspended">Suspended</option>
-                                </select>
-                                {errors.state && (
-                                    <p className="text-sm text-red-500">
-                                        {errors.state}
-                                    </p>
-                                )}
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label htmlFor="memory_gb">Memory (GB)</Label>
-                                <Input
-                                    id="memory_gb"
-                                    type="number"
-                                    min="1"
-                                    value={data.memory_gb}
-                                    onChange={(e) =>
-                                        setData('memory_gb', e.target.value)
-                                    }
-                                />
-                                {errors.memory_gb && (
-                                    <p className="text-sm text-red-500">
-                                        {errors.memory_gb}
-                                    </p>
-                                )}
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label htmlFor="cpu_cores">CPU Cores</Label>
-                                <Input
-                                    id="cpu_cores"
-                                    type="number"
-                                    min="1"
-                                    value={data.cpu_cores}
-                                    onChange={(e) =>
-                                        setData('cpu_cores', e.target.value)
-                                    }
-                                />
-                                {errors.cpu_cores && (
-                                    <p className="text-sm text-red-500">
-                                        {errors.cpu_cores}
-                                    </p>
-                                )}
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label htmlFor="provisioned_space">
-                                    Provisioned Space
-                                </Label>
-                                <Input
-                                    id="provisioned_space"
-                                    placeholder="e.g. 100 GB"
-                                    value={data.provisioned_space}
+                                    id="certificate_exp"
+                                    placeholder="e.g. 2027-01-31"
+                                    value={data.certificate_exp}
                                     onChange={(e) =>
                                         setData(
-                                            'provisioned_space',
+                                            'certificate_exp',
                                             e.target.value,
                                         )
                                     }
                                 />
-                                {errors.provisioned_space && (
+                                {errors.certificate_exp && (
                                     <p className="text-sm text-red-500">
-                                        {errors.provisioned_space}
+                                        {errors.certificate_exp}
                                     </p>
                                 )}
                             </div>
 
-                            <div className="space-y-2">
-                                <Label htmlFor="used_space">Used Space</Label>
-                                <Input
-                                    id="used_space"
-                                    placeholder="e.g. 45 GB"
-                                    value={data.used_space}
-                                    onChange={(e) =>
-                                        setData('used_space', e.target.value)
+                            <div className="flex items-center gap-2 rounded-lg border p-3">
+                                <Checkbox
+                                    id="is_active"
+                                    checked={data.is_active}
+                                    onCheckedChange={(checked) =>
+                                        setData('is_active', checked === true)
                                     }
                                 />
-                                {errors.used_space && (
+                                <Label
+                                    htmlFor="is_active"
+                                    className="font-normal"
+                                >
+                                    Active{' '}
+                                    <span className="text-xs text-muted-foreground">
+                                        (inactive VMs are excluded from the
+                                        daily report's Availability count)
+                                    </span>
+                                </Label>
+                            </div>
+
+                            <div className="col-span-1 space-y-2 md:col-span-2">
+                                <Label htmlFor="notes">Notes</Label>
+                                <textarea
+                                    id="notes"
+                                    className="flex min-h-16 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                                    value={data.notes}
+                                    onChange={(e) =>
+                                        setData('notes', e.target.value)
+                                    }
+                                />
+                                {errors.notes && (
                                     <p className="text-sm text-red-500">
-                                        {errors.used_space}
+                                        {errors.notes}
                                     </p>
                                 )}
                             </div>
