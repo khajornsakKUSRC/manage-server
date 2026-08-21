@@ -34,6 +34,13 @@ class DailyReportPdfService
             'notes' => $item->notes ?: '-',
         ])->values();
 
+        $incidents = $report->incidents->map(fn ($entry) => [
+            'vm_name' => $entry->vm_name ?: '-',
+            'incident' => $entry->incident ? (DailyReport::INCIDENTS[$entry->incident] ?? $entry->incident) : '-',
+            'action' => $entry->action ? (DailyReport::ACTIONS[$entry->action] ?? $entry->action) : '-',
+            'remark' => $entry->remark ?: '-',
+        ])->values();
+
         return [
             'reportDate' => $report->report_date->translatedFormat('d/m/Y'),
             'total' => $total,
@@ -41,9 +48,7 @@ class DailyReportPdfService
             'down' => $down,
             'availabilityPct' => $total > 0 ? round(($up / $total) * 100, 1) : 0,
             'rows' => $rows,
-            'incident' => $report->incident ? (DailyReport::INCIDENTS[$report->incident] ?? $report->incident) : null,
-            'action' => $report->action ? (DailyReport::ACTIONS[$report->action] ?? $report->action) : null,
-            'remark' => $report->remark,
+            'incidents' => $incidents,
             'createdBy' => $report->createdBy?->name,
         ];
     }

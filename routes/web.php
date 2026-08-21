@@ -4,9 +4,12 @@ use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/login')->name('home');
 
+use App\Http\Controllers\AlarmController;
 use App\Http\Controllers\ApplianceController;
 use App\Http\Controllers\DailyReportController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DatastoreController;
+use App\Http\Controllers\ModSecurityController;
 use App\Http\Controllers\HostController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\VmController;
@@ -36,6 +39,22 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('daily-reports/pull', [DailyReportController::class, 'pull'])->name('daily-reports.pull');
         Route::post('daily-reports', [DailyReportController::class, 'store'])->name('daily-reports.store');
         Route::get('daily-reports/export', [DailyReportController::class, 'export'])->name('daily-reports.export');
+    });
+
+    Route::middleware('page:alarms')->group(function () {
+        Route::get('alarms', [AlarmController::class, 'index'])->name('alarms.index');
+        Route::get('api/vsphere/alarms', [VsphereController::class, 'alarms'])->name('vsphere.alarms');
+        Route::get('api/vsphere/alarms/count', [VsphereController::class, 'alarmsCount'])->name('vsphere.alarms.count');
+    });
+
+    Route::middleware('page:datastores')->group(function () {
+        Route::get('datastores', [DatastoreController::class, 'index'])->name('datastores.index');
+        Route::get('api/vsphere/datastores/trends', [VsphereController::class, 'datastoreTrends'])->name('vsphere.datastores.trends');
+    });
+
+    Route::middleware('page:modsecurity')->group(function () {
+        Route::get('modsecurity', [ModSecurityController::class, 'index'])->name('modsecurity.index');
+        Route::get('api/modsecurity/logs', [ModSecurityController::class, 'logs'])->name('modsecurity.logs');
     });
 
     // User management is itself a privileged action — granting access to

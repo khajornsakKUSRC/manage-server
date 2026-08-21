@@ -1,13 +1,8 @@
 import { Head } from '@inertiajs/react';
-import { AlertCircle, ChevronDown, RefreshCw, Server } from 'lucide-react';
+import { AlertCircle, RefreshCw, Server } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-    Collapsible,
-    CollapsibleContent,
-    CollapsibleTrigger,
-} from '@/components/ui/collapsible';
 
 interface VsphereHost {
     host: string;
@@ -199,51 +194,36 @@ export default function Index() {
                                         </span>
                                     </CardHeader>
                                     <CardContent>
+                                        <p className="mb-2 text-xs font-medium text-muted-foreground uppercase">
+                                            Virtual Machines
+                                            {hostVms.length > 0 &&
+                                                ` (${hostVms.length})`}
+                                        </p>
                                         {hostVms.length === 0 ? (
-                                            <>
-                                                <p className="mb-2 text-xs font-medium text-muted-foreground uppercase">
-                                                    Virtual Machines
-                                                </p>
-                                                <p className="text-sm text-muted-foreground">
-                                                    ไม่มี VM
-                                                </p>
-                                            </>
+                                            <p className="text-sm text-muted-foreground">
+                                                ไม่มี VM
+                                            </p>
                                         ) : (
-                                            <Collapsible>
-                                                <CollapsibleTrigger className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-sm font-medium [&[data-state=open]>svg]:rotate-180">
-                                                    <span>
-                                                        {hostVms.length} VM
-                                                        {hostVms.length > 1
-                                                            ? 's'
-                                                            : ''}
-                                                    </span>
-                                                    <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform" />
-                                                </CollapsibleTrigger>
-                                                <CollapsibleContent className="mt-2 space-y-1">
-                                                    {hostVms.map((vm) => (
-                                                        <div
-                                                            key={vm.vm}
-                                                            className="flex items-center justify-between rounded-md border px-3 py-1.5 text-sm"
+                                            <div className="space-y-1">
+                                                {hostVms.map((vm) => (
+                                                    <div
+                                                        key={vm.vm}
+                                                        className="flex items-center justify-between rounded-md border px-3 py-1.5 text-sm"
+                                                    >
+                                                        <span>{vm.name}</span>
+                                                        <span
+                                                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                                                                vm.power_state ===
+                                                                'POWERED_ON'
+                                                                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                                                    : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                                            }`}
                                                         >
-                                                            <span>
-                                                                {vm.name}
-                                                            </span>
-                                                            <span
-                                                                className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                                                                    vm.power_state ===
-                                                                    'POWERED_ON'
-                                                                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                                                                        : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
-                                                                }`}
-                                                            >
-                                                                {
-                                                                    vm.power_state
-                                                                }
-                                                            </span>
-                                                        </div>
-                                                    ))}
-                                                </CollapsibleContent>
-                                            </Collapsible>
+                                                            {vm.power_state}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         )}
                                     </CardContent>
                                 </Card>

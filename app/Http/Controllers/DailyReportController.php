@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\DailyReport;
+use App\Models\DailyReportIncident;
 use App\Models\DailyReportItem;
 use App\Services\DailyReportPdfService;
+use App\Services\DailyReportTelegramService;
 use App\Services\DailyReportVsphereService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
@@ -27,7 +29,7 @@ class DailyReportController extends Controller
 
         $selectedDate = $request->query('date', $availableDates->first() ?? now()->format('Y-m-d'));
 
-        $report = DailyReport::with('items')
+        $report = DailyReport::with(['items', 'incidents'])
             ->whereDate('report_date', $selectedDate)
             ->first();
 
@@ -58,13 +60,10 @@ class DailyReportController extends Controller
         return response()->json(['items' => $items]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request, DailyReportTelegramService $telegramService): RedirectResponse
     {
         $validated = $request->validate([
             'report_date' => 'required|date_format:Y-m-d',
-            'incident' => ['nullable', Rule::in(array_keys(DailyReport::INCIDENTS))],
-            'action' => ['nullable', Rule::in(array_keys(DailyReport::ACTIONS))],
-            'remark' => 'nullable|string|max:2000',
             'items' => 'required|array|min:1',
             'items.*.name' => 'required|string',
             'items.*.host' => 'nullable|string',
@@ -75,17 +74,17 @@ class DailyReportController extends Controller
             'items.*.uptime_seconds' => 'nullable|integer',
             'items.*.certificate_exp' => 'nullable|string|max:255',
             'items.*.notes' => 'nullable|string',
+            'incidents' => 'nullable|array',
+            'incidents.*.vm_name' => 'nullable|string',
+            'incidents.*.incident' => ['nullable', Rule::in(array_keys(DailyReport::INCIDENTS))],
+            'incidents.*.action' => ['nullable', Rule::in(array_keys(DailyReport::ACTIONS))],
+            'incidents.*.remark' => 'nullable|string|max:2000',
         ]);
 
-        DB::transaction(function () use ($validated) {
+        $report = DB::transaction(function () use ($validated) {
             $report = DailyReport::updateOrCreate(
                 ['report_date' => $validated['report_date']],
-                [
-                    'created_by' => Auth::id(),
-                    'incident' => $validated['incident'] ?? null,
-                    'action' => $validated['action'] ?? null,
-                    'remark' => $validated['remark'] ?? null,
-                ]
+                ['created_by' => Auth::id()]
             );
 
             $report->items()->delete();
@@ -108,7 +107,33 @@ class DailyReportController extends Controller
 
                 DailyReportItem::insert($chunk);
             }
+
+            $report->incidents()->delete();
+
+            $incidents = array_filter(
+                $validated['incidents'] ?? [],
+                fn ($entry) => filled($entry['vm_name'] ?? null)
+                    || filled($entry['incident'] ?? null)
+                    || filled($entry['action'] ?? null)
+                    || filled($entry['remark'] ?? null),
+            );
+
+            foreach ($incidents as $entry) {
+                DailyReportIncident::create([
+                    'daily_report_id' => $report->id,
+                    'vm_name' => $entry['vm_name'] ?? null,
+                    'incident' => $entry['incident'] ?? null,
+                    'action' => $entry['action'] ?? null,
+                    'remark' => $entry['remark'] ?? null,
+                ]);
+            }
+
+            return $report;
         });
+
+        // Best-effort — a failed Telegram send never blocks the save that
+        // already succeeded above.
+        $telegramService->send($report->load(['items', 'incidents']));
 
         return redirect()->route('daily-reports.index', ['date' => $validated['report_date']]);
     }
@@ -124,7 +149,7 @@ class DailyReportController extends Controller
             'end_date' => 'required|date_format:Y-m-d|after_or_equal:start_date',
         ]);
 
-        $reports = DailyReport::with('items')
+        $reports = DailyReport::with(['items', 'incidents'])
             ->whereBetween('report_date', [$validated['start_date'], $validated['end_date']])
             ->orderBy('report_date')
             ->get();

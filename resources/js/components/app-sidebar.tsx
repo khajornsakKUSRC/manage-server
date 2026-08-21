@@ -1,12 +1,16 @@
 import { Link, usePage } from '@inertiajs/react';
 import {
     Activity,
+    BellRing,
+    Database,
     LayoutGrid,
     Server,
     Monitor,
     ClipboardList,
+    ShieldAlert,
     Users,
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
@@ -59,12 +63,32 @@ const mainNavItems: PermissionedNavItem[] = [
         permission: 'daily-reports',
     },
     {
+        title: 'Alarm Notification',
+        href: '/alarms',
+        icon: BellRing,
+        permission: 'alarms',
+    },
+    {
+        title: 'Datastore',
+        href: '/datastores',
+        icon: Database,
+        permission: 'datastores',
+    },
+    {
+        title: 'Mod Security',
+        href: '/modsecurity',
+        icon: ShieldAlert,
+        permission: 'modsecurity',
+    },
+    {
         title: 'Manage Users',
         href: '/users',
         icon: Users,
         adminOnly: true,
     },
 ];
+
+const ALARM_COUNT_POLL_MS = 60_000;
 
 export function AppSidebar() {
     const { auth } = usePage().props;
@@ -89,6 +113,50 @@ export function AppSidebar() {
         );
     });
 
+    const hasAlarmsAccess = visibleNavItems.some(
+        (item) => item.href === '/alarms',
+    );
+
+    const [alarmCount, setAlarmCount] = useState(0);
+
+    // Polls a lightweight count-only endpoint (no AI hints, no alarm-name
+    // resolution) so the sidebar badge can refresh often without the cost
+    // of the full Alarm Notification page's data.
+    useEffect(() => {
+        if (!hasAlarmsAccess) {
+            return;
+        }
+
+        let cancelled = false;
+
+        const load = () => {
+            fetch('/api/vsphere/alarms/count')
+                .then((res) => (res.ok ? res.json() : Promise.reject()))
+                .then((json) => {
+                    if (!cancelled) {
+                        setAlarmCount(
+                            typeof json.data === 'number' ? json.data : 0,
+                        );
+                    }
+                })
+                .catch(() => {
+                    // Silently ignore — the badge just keeps its last known count.
+                });
+        };
+
+        load();
+        const interval = setInterval(load, ALARM_COUNT_POLL_MS);
+
+        return () => {
+            cancelled = true;
+            clearInterval(interval);
+        };
+    }, [hasAlarmsAccess]);
+
+    const itemsWithBadges = visibleNavItems.map((item) =>
+        item.href === '/alarms' ? { ...item, badge: alarmCount } : item,
+    );
+
     return (
         <Sidebar collapsible="icon" variant="inset">
             <SidebarHeader>
@@ -104,7 +172,7 @@ export function AppSidebar() {
             </SidebarHeader>
 
             <SidebarContent>
-                <NavMain items={visibleNavItems} />
+                <NavMain items={itemsWithBadges} />
             </SidebarContent>
 
             <SidebarFooter>

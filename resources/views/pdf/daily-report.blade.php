@@ -97,23 +97,6 @@
         color: #b91c1c;
         font-weight: bold;
     }
-    .manual-box {
-        border: 1px solid #999;
-        padding: 6px 8px;
-        margin-top: 4px;
-    }
-    .manual-box .section-title {
-        font-weight: bold;
-        margin-bottom: 4px;
-    }
-    .manual-row {
-        margin: 2px 0;
-    }
-    .manual-label {
-        font-weight: bold;
-        display: inline-block;
-        width: 70px;
-    }
     .footer {
         margin-top: 10px;
         font-size: 8px;
@@ -196,12 +179,31 @@
         </tbody>
     </table>
 
-    <div class="manual-box">
-        <div class="section-title">บันทึกเหตุการณ์ประจำวัน</div>
-        <div class="manual-row"><span class="manual-label">Incident:</span> {{ $page['incident'] ?: '-' }}</div>
-        <div class="manual-row"><span class="manual-label">Action:</span> {{ $page['action'] ?: '-' }}</div>
-        <div class="manual-row"><span class="manual-label">Remark:</span> {{ $page['remark'] ?: '-' }}</div>
-    </div>
+    <table class="data">
+        <caption>บันทึกเหตุการณ์ประจำวัน</caption>
+        <thead>
+            <tr>
+                <th>VM</th>
+                <th>Incident</th>
+                <th>Action</th>
+                <th>Remark</th>
+            </tr>
+        </thead>
+        <tbody>
+            @forelse ($page['incidents'] as $incident)
+                <tr>
+                    <td class="name">{{ $incident['vm_name'] }}</td>
+                    <td>{{ $incident['incident'] }}</td>
+                    <td>{{ $incident['action'] }}</td>
+                    <td class="name">{{ $incident['remark'] }}</td>
+                </tr>
+            @empty
+                <tr>
+                    <td colspan="4">ไม่มีเหตุการณ์ที่บันทึก</td>
+                </tr>
+            @endforelse
+        </tbody>
+    </table>
 
     <div class="footer">สร้างรายงานโดยระบบ Manage-Server เมื่อ {{ $generatedAt }}</div>
 </div>

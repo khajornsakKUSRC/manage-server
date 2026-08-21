@@ -41,4 +41,24 @@ return [
         'password' => env('VSPHERE_PASSWORD'),
     ],
 
+    'anthropic' => [
+        'api_key' => env('ANTHROPIC_API_KEY'),
+    ],
+
+    'guest_ssh' => [
+        'username' => env('GUEST_SSH_USERNAME'),
+        'password' => env('GUEST_SSH_PASSWORD'),
+        'port' => env('GUEST_SSH_PORT', 22),
+    ],
+
+    'telegram' => [
+        'bot_token' => env('TELEGRAM_BOT_TOKEN'),
+        'chat_id' => env('TELEGRAM_CHAT_ID'),
+    ],
+
+    'telegram_daily_report' => [
+        'bot_token' => env('TELEGRAM_DAILY_REPORT_BOT_TOKEN'),
+        'chat_id' => env('TELEGRAM_DAILY_REPORT_CHAT_ID'),
+    ],
+
 ];

@@ -1,7 +1,7 @@
 import type { RequestPayload } from '@inertiajs/core';
 import { Head, router, usePage } from '@inertiajs/react';
-import { Cloud, FileDown, Save } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Cloud, FileDown, Plus, Save, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -37,13 +37,26 @@ interface ReportRow {
     notes: string | null;
 }
 
-interface DailyReport {
-    id: number;
-    report_date: string;
+interface IncidentEntry {
+    id?: number;
+    vm_name: string | null;
     incident: string | null;
     action: string | null;
     remark: string | null;
+}
+
+interface DailyReport {
+    id: number;
+    report_date: string;
     items: ReportRow[];
+    incidents: IncidentEntry[];
+}
+
+interface IncidentForm {
+    vm_name: string;
+    incident: string;
+    action: string;
+    remark: string;
 }
 
 interface Props {
@@ -55,6 +68,10 @@ interface Props {
 }
 
 const NONE = 'none';
+
+function emptyIncidentForm(): IncidentForm {
+    return { vm_name: NONE, incident: NONE, action: NONE, remark: '' };
+}
 
 function isUp(row: ReportRow): boolean {
     return row.power_state === 'POWERED_ON';
@@ -270,10 +287,52 @@ function ReportForm({
     const [rows, setRows] = useState<ReportRow[]>(report?.items ?? []);
     const [pulling, setPulling] = useState(false);
 
-    const [incident, setIncident] = useState(report?.incident ?? NONE);
-    const [action, setAction] = useState(report?.action ?? NONE);
-    const [remark, setRemark] = useState(report?.remark ?? '');
+    const [incidents, setIncidents] = useState<IncidentForm[]>(() => {
+        const saved = report?.incidents ?? [];
+
+        if (saved.length === 0) {
+            return [emptyIncidentForm()];
+        }
+
+        return saved.map((entry) => ({
+            vm_name: entry.vm_name ?? NONE,
+            incident: entry.incident ?? NONE,
+            action: entry.action ?? NONE,
+            remark: entry.remark ?? '',
+        }));
+    });
     const [saving, setSaving] = useState(false);
+
+    const vmOptions = useMemo(() => {
+        const names = new Set(rows.map((row) => row.name));
+
+        incidents.forEach((entry) => {
+            if (entry.vm_name !== NONE) {
+                names.add(entry.vm_name);
+            }
+        });
+
+        return Array.from(names);
+    }, [rows, incidents]);
+
+    const updateIncident = (
+        index: number,
+        patch: Partial<IncidentForm>,
+    ) => {
+        setIncidents((prev) =>
+            prev.map((entry, i) =>
+                i === index ? { ...entry, ...patch } : entry,
+            ),
+        );
+    };
+
+    const addIncident = () => {
+        setIncidents((prev) => [...prev, emptyIncidentForm()]);
+    };
+
+    const removeIncident = (index: number) => {
+        setIncidents((prev) => prev.filter((_, i) => i !== index));
+    };
 
     const handlePull = async () => {
         setPulling(true);
@@ -318,10 +377,21 @@ function ReportForm({
             '/daily-reports',
             {
                 report_date: date,
-                incident: incident === NONE ? '' : incident,
-                action: action === NONE ? '' : action,
-                remark,
                 items: rows,
+                incidents: incidents
+                    .filter(
+                        (entry) =>
+                            entry.vm_name !== NONE ||
+                            entry.incident !== NONE ||
+                            entry.action !== NONE ||
+                            entry.remark.trim() !== '',
+                    )
+                    .map((entry) => ({
+                        vm_name: entry.vm_name === NONE ? '' : entry.vm_name,
+                        incident: entry.incident === NONE ? '' : entry.incident,
+                        action: entry.action === NONE ? '' : entry.action,
+                        remark: entry.remark,
+                    })),
                 // Inertia's FormDataConvertible constraint requires an
                 // explicit index signature, which named interfaces don't
                 // structurally provide — the payload itself is plain JSON.
@@ -477,56 +547,136 @@ function ReportForm({
                 <CardHeader>
                     <CardTitle>บันทึกเหตุการณ์ประจำวัน</CardTitle>
                 </CardHeader>
-                <CardContent className="grid gap-4 sm:grid-cols-3">
-                    <div className="space-y-2">
-                        <Label>Incident (ถ้ามี)</Label>
-                        <Select value={incident} onValueChange={setIncident}>
-                            <SelectTrigger className="w-full">
-                                <SelectValue placeholder="เลือก Incident" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value={NONE}>ไม่มี</SelectItem>
-                                {Object.entries(incidentOptions).map(
-                                    ([value, label]) => (
-                                        <SelectItem key={value} value={value}>
-                                            {label}
+                <CardContent className="space-y-4">
+                    {incidents.map((entry, index) => (
+                        <div
+                            key={index}
+                            className="grid gap-3 rounded-md border p-3 sm:grid-cols-[1.2fr_1fr_1fr_1.4fr_auto] sm:items-end"
+                        >
+                            <div className="space-y-2">
+                                <Label>VM ที่มีปัญหา</Label>
+                                <Select
+                                    value={entry.vm_name}
+                                    onValueChange={(value) =>
+                                        updateIncident(index, {
+                                            vm_name: value,
+                                        })
+                                    }
+                                >
+                                    <SelectTrigger className="w-full">
+                                        <SelectValue placeholder="เลือก VM" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value={NONE}>
+                                            ไม่ระบุ
                                         </SelectItem>
-                                    ),
-                                )}
-                            </SelectContent>
-                        </Select>
-                    </div>
+                                        {vmOptions.map((name) => (
+                                            <SelectItem
+                                                key={name}
+                                                value={name}
+                                            >
+                                                {name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
 
-                    <div className="space-y-2">
-                        <Label>Action</Label>
-                        <Select value={action} onValueChange={setAction}>
-                            <SelectTrigger className="w-full">
-                                <SelectValue placeholder="เลือก Action" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value={NONE}>ไม่มี</SelectItem>
-                                {Object.entries(actionOptions).map(
-                                    ([value, label]) => (
-                                        <SelectItem key={value} value={value}>
-                                            {label}
+                            <div className="space-y-2">
+                                <Label>Incident</Label>
+                                <Select
+                                    value={entry.incident}
+                                    onValueChange={(value) =>
+                                        updateIncident(index, {
+                                            incident: value,
+                                        })
+                                    }
+                                >
+                                    <SelectTrigger className="w-full">
+                                        <SelectValue placeholder="เลือก Incident" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value={NONE}>
+                                            ไม่มี
                                         </SelectItem>
-                                    ),
-                                )}
-                            </SelectContent>
-                        </Select>
-                    </div>
+                                        {Object.entries(incidentOptions).map(
+                                            ([value, label]) => (
+                                                <SelectItem
+                                                    key={value}
+                                                    value={value}
+                                                >
+                                                    {label}
+                                                </SelectItem>
+                                            ),
+                                        )}
+                                    </SelectContent>
+                                </Select>
+                            </div>
 
-                    <div className="space-y-2 sm:col-span-1">
-                        <Label htmlFor="remark">Remark</Label>
-                        <textarea
-                            id="remark"
-                            className="flex min-h-9 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                            rows={1}
-                            value={remark}
-                            onChange={(e) => setRemark(e.target.value)}
-                            placeholder="หมายเหตุเพิ่มเติม"
-                        />
-                    </div>
+                            <div className="space-y-2">
+                                <Label>Action</Label>
+                                <Select
+                                    value={entry.action}
+                                    onValueChange={(value) =>
+                                        updateIncident(index, {
+                                            action: value,
+                                        })
+                                    }
+                                >
+                                    <SelectTrigger className="w-full">
+                                        <SelectValue placeholder="เลือก Action" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value={NONE}>
+                                            ไม่มี
+                                        </SelectItem>
+                                        {Object.entries(actionOptions).map(
+                                            ([value, label]) => (
+                                                <SelectItem
+                                                    key={value}
+                                                    value={value}
+                                                >
+                                                    {label}
+                                                </SelectItem>
+                                            ),
+                                        )}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor={`remark-${index}`}>
+                                    Remark
+                                </Label>
+                                <Input
+                                    id={`remark-${index}`}
+                                    value={entry.remark}
+                                    onChange={(e) =>
+                                        updateIncident(index, {
+                                            remark: e.target.value,
+                                        })
+                                    }
+                                    placeholder="หมายเหตุเพิ่มเติม"
+                                />
+                            </div>
+
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                onClick={() => removeIncident(index)}
+                                disabled={incidents.length === 1}
+                                aria-label="ลบรายการนี้"
+                            >
+                                <Trash2 className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    ))}
+
+                    <Button type="button" variant="outline" onClick={addIncident}>
+                        <Plus className="mr-2 h-4 w-4" />
+                        เพิ่มรายการ
+                    </Button>
                 </CardContent>
                 <CardContent className="pt-0">
                     <Button

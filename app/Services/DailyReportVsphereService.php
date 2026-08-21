@@ -47,9 +47,10 @@ class DailyReportVsphereService
             ->all();
 
         $guestSnapshots = $this->vsphere->getVmGuestSnapshots($poweredOnIds);
+        $bootTimes = $this->vsphere->getVmBootTimes($poweredOnIds);
 
         return $matches
-            ->map(function (array $m) use ($hostMap, $guestSnapshots) {
+            ->map(function (array $m) use ($hostMap, $guestSnapshots, $bootTimes) {
                 $vm = $m['vm'];
                 $live = $m['live'];
 
@@ -67,7 +68,8 @@ class DailyReportVsphereService
                     ];
                 }
 
-                $guest = $guestSnapshots[$live['vm']] ?? ['boot_time' => null, 'disk_usage_pct' => null];
+                $guest = $guestSnapshots[$live['vm']] ?? ['disk_usage_pct' => null];
+                $bootTime = $bootTimes[$live['vm']] ?? null;
 
                 return [
                     'name' => $live['name'],
@@ -78,8 +80,8 @@ class DailyReportVsphereService
                         ? round($live['memory_size_MiB'] / 1024, 2)
                         : null,
                     'disk_usage_pct' => $guest['disk_usage_pct'],
-                    'uptime_seconds' => $guest['boot_time']
-                        ? max(0, Carbon::parse($guest['boot_time'])->diffInSeconds(now()))
+                    'uptime_seconds' => $bootTime
+                        ? max(0, (int) Carbon::parse($bootTime)->diffInSeconds(now()))
                         : null,
                     'certificate_exp' => $vm->certificate_exp,
                     'notes' => $vm->notes,

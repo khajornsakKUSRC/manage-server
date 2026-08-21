@@ -16,6 +16,9 @@ final class Permissions
         'vms' => 'Manage VMs',
         'appliance' => 'Appliance Health',
         'daily-reports' => 'Daily Report',
+        'alarms' => 'Alarm Notification',
+        'datastores' => 'Datastore',
+        'modsecurity' => 'Mod Security',
     ];
 
     /**

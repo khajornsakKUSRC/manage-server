@@ -8,11 +8,14 @@ use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
+use SimpleXMLElement;
 use Throwable;
 
 class VsphereService
 {
     protected const SESSION_CACHE_KEY = 'vsphere.session_id';
+
+    protected const SOAP_SESSION_CACHE_KEY = 'vsphere.soap_session_cookie';
 
     protected const SESSION_TTL_SECONDS = 1800;
 
@@ -221,16 +224,15 @@ class VsphereService
     }
 
     /**
-     * For each given (powered-on) VM id, fetches guest OS boot time and
-     * filesystem usage in two pooled (concurrent) request batches instead
-     * of one round trip per VM per field — with dozens of VMs, sequential
-     * calls would take minutes and risk timing out. Both guest endpoints
-     * require VMware Tools to be installed and running; when they're not
-     * (or the request otherwise fails), that VM's fields come back null
-     * rather than aborting the whole batch.
+     * For each given (powered-on) VM id, fetches guest OS filesystem usage
+     * in one pooled (concurrent) request batch instead of one round trip
+     * per VM — with dozens of VMs, sequential calls would take minutes and
+     * risk timing out. Requires VMware Tools to be installed and running;
+     * when it's not (or the request otherwise fails), that VM's fields come
+     * back null rather than aborting the whole batch.
      *
      * @param  array<int, string>  $vmIds
-     * @return array<string, array{boot_time: ?string, disk_usage_pct: ?float, capacity_gb: ?float, used_gb: ?float}>
+     * @return array<string, array{disk_usage_pct: ?float, capacity_gb: ?float, used_gb: ?float}>
      */
     public function getVmGuestSnapshots(array $vmIds): array
     {
@@ -240,11 +242,6 @@ class VsphereService
 
         $sessionId = $this->getSessionId();
 
-        $powerResponses = Http::pool(fn (Pool $pool) => collect($vmIds)
-            ->map(fn ($id) => $this->pooled($pool->as($id), $sessionId)
-                ->get($this->baseUrl."/api/vcenter/vm/{$id}/guest/power"))
-            ->all());
-
         $filesystemResponses = Http::pool(fn (Pool $pool) => collect($vmIds)
             ->map(fn ($id) => $this->pooled($pool->as($id), $sessionId)
                 ->get($this->baseUrl."/api/vcenter/vm/{$id}/guest/local-filesystem"))
@@ -253,13 +250,173 @@ class VsphereService
         $snapshots = [];
 
         foreach ($vmIds as $id) {
-            $snapshots[$id] = [
-                'boot_time' => $this->extractBootTime($powerResponses[$id] ?? null),
-                ...$this->extractDiskUsage($filesystemResponses[$id] ?? null),
-            ];
+            $snapshots[$id] = $this->extractDiskUsage($filesystemResponses[$id] ?? null);
         }
 
         return $snapshots;
+    }
+
+    /**
+     * For each given VM id, the time ESXi/vCenter last recorded the VM
+     * powering on (`runtime.bootTime`), read via the classic SOAP API. This
+     * is tracked by the hypervisor itself, unlike the REST guest/power
+     * endpoint's boot_time, which requires the guest OS's VMware Tools to
+     * report it — Tools on this environment's VMs don't, so that field is
+     * always empty. A VM with no recorded boot time (e.g. powered off)
+     * comes back null rather than aborting the whole batch.
+     *
+     * @param  array<int, string>  $vmIds
+     * @return array<string, ?string> vm id => ISO 8601 boot time, or null
+     */
+    public function getVmBootTimes(array $vmIds, bool $isRetry = false): array
+    {
+        if (empty($vmIds)) {
+            return [];
+        }
+
+        $cookie = $this->getSoapSessionCookie();
+
+        $objectSet = collect($vmIds)
+            ->map(fn ($id) => '<vim25:objectSet><vim25:obj type="VirtualMachine">'.$this->xmlEscape($id).'</vim25:obj></vim25:objectSet>')
+            ->implode('');
+
+        $body = '<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:vim25="urn:vim25">
+  <soapenv:Body>
+    <vim25:RetrieveProperties>
+      <vim25:_this type="PropertyCollector">propertyCollector</vim25:_this>
+      <vim25:specSet>
+        <vim25:propSet>
+          <vim25:type>VirtualMachine</vim25:type>
+          <vim25:pathSet>runtime.bootTime</vim25:pathSet>
+        </vim25:propSet>
+        '.$objectSet.'
+      </vim25:specSet>
+    </vim25:RetrieveProperties>
+  </soapenv:Body>
+</soapenv:Envelope>';
+
+        $response = $this->soapRequest($body, $cookie);
+
+        if ($this->isSoapSessionExpired($response) && ! $isRetry) {
+            Cache::forget(self::SOAP_SESSION_CACHE_KEY);
+
+            return $this->getVmBootTimes($vmIds, isRetry: true);
+        }
+
+        if ($response->failed()) {
+            return [];
+        }
+
+        return $this->parseBootTimes($response->body());
+    }
+
+    /**
+     * For each given entity id (of the given vim25 type — HostSystem,
+     * VirtualMachine, or Datastore), the currently triggered alarms on it,
+     * read via the classic SOAP API's `triggeredAlarmState`. An entity with
+     * no active alarms is omitted from the result rather than aborting the
+     * whole batch; alarm names/descriptions aren't included here — resolve
+     * the `alarm` ids through getAlarmDefinitions().
+     *
+     * @param  array<int, string>  $entityIds
+     * @return array<string, array{name: string, alarms: array<int, array{alarm: string, status: string, time: ?string, acknowledged: bool}>}>
+     */
+    public function getTriggeredAlarms(array $entityIds, string $entityType, bool $isRetry = false): array
+    {
+        if (empty($entityIds)) {
+            return [];
+        }
+
+        $cookie = $this->getSoapSessionCookie();
+
+        $objectSet = collect($entityIds)
+            ->map(fn ($id) => '<vim25:objectSet><vim25:obj type="'.$entityType.'">'.$this->xmlEscape($id).'</vim25:obj></vim25:objectSet>')
+            ->implode('');
+
+        $body = '<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:vim25="urn:vim25">
+  <soapenv:Body>
+    <vim25:RetrieveProperties>
+      <vim25:_this type="PropertyCollector">propertyCollector</vim25:_this>
+      <vim25:specSet>
+        <vim25:propSet>
+          <vim25:type>'.$entityType.'</vim25:type>
+          <vim25:pathSet>name</vim25:pathSet>
+          <vim25:pathSet>triggeredAlarmState</vim25:pathSet>
+        </vim25:propSet>
+        '.$objectSet.'
+      </vim25:specSet>
+    </vim25:RetrieveProperties>
+  </soapenv:Body>
+</soapenv:Envelope>';
+
+        $response = $this->soapRequest($body, $cookie);
+
+        if ($this->isSoapSessionExpired($response) && ! $isRetry) {
+            Cache::forget(self::SOAP_SESSION_CACHE_KEY);
+
+            return $this->getTriggeredAlarms($entityIds, $entityType, isRetry: true);
+        }
+
+        if ($response->failed()) {
+            return [];
+        }
+
+        return $this->parseTriggeredAlarms($response->body());
+    }
+
+    /**
+     * Resolves each given Alarm id to its definition (name + description) —
+     * the human-readable alarm rule, shared across every entity it's
+     * triggered on. An id that can't be resolved is omitted rather than
+     * aborting the whole batch.
+     *
+     * @param  array<int, string>  $alarmIds
+     * @return array<string, array{name: string, description: string}>
+     */
+    public function getAlarmDefinitions(array $alarmIds, bool $isRetry = false): array
+    {
+        if (empty($alarmIds)) {
+            return [];
+        }
+
+        $cookie = $this->getSoapSessionCookie();
+
+        $objectSet = collect($alarmIds)
+            ->map(fn ($id) => '<vim25:objectSet><vim25:obj type="Alarm">'.$this->xmlEscape($id).'</vim25:obj></vim25:objectSet>')
+            ->implode('');
+
+        $body = '<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:vim25="urn:vim25">
+  <soapenv:Body>
+    <vim25:RetrieveProperties>
+      <vim25:_this type="PropertyCollector">propertyCollector</vim25:_this>
+      <vim25:specSet>
+        <vim25:propSet>
+          <vim25:type>Alarm</vim25:type>
+          <vim25:pathSet>info.name</vim25:pathSet>
+          <vim25:pathSet>info.description</vim25:pathSet>
+        </vim25:propSet>
+        '.$objectSet.'
+      </vim25:specSet>
+    </vim25:RetrieveProperties>
+  </soapenv:Body>
+</soapenv:Envelope>';
+
+        $response = $this->soapRequest($body, $cookie);
+
+        if ($this->isSoapSessionExpired($response) && ! $isRetry) {
+            Cache::forget(self::SOAP_SESSION_CACHE_KEY);
+
+            return $this->getAlarmDefinitions($alarmIds, isRetry: true);
+        }
+
+        if ($response->failed()) {
+            return [];
+        }
+
+        return $this->parseAlarmDefinitions($response->body());
     }
 
     /**
@@ -304,17 +461,6 @@ class VsphereService
         $request = $request->timeout(30)->withHeaders(['vmware-api-session-id' => $sessionId]);
 
         return app()->environment('production') ? $request : $request->withoutVerifying();
-    }
-
-    protected function extractBootTime(mixed $response): ?string
-    {
-        if (! $response instanceof Response || $response->failed()) {
-            return null;
-        }
-
-        $bootTime = $response->json('boot_time');
-
-        return is_string($bootTime) && $bootTime !== '' ? $bootTime : null;
     }
 
     /**
@@ -425,6 +571,223 @@ class VsphereService
         }
 
         return trim($response->body(), '"');
+    }
+
+    /**
+     * Sends a request against the classic SOAP API (`/sdk`), used only for
+     * `runtime.bootTime` (see getVmBootTimes()) — the REST surface has no
+     * equivalent that doesn't depend on guest-side VMware Tools.
+     */
+    protected function soapRequest(string $body, ?string $cookie = null): Response
+    {
+        $request = $this->client()->withHeaders([
+            'Content-Type' => 'text/xml; charset=utf-8',
+            'SOAPAction' => 'urn:vim25/6.7',
+        ]);
+
+        if ($cookie !== null) {
+            $request = $request->withHeaders(['Cookie' => $cookie]);
+        }
+
+        return $request->withBody($body, 'text/xml')->post($this->baseUrl.'/sdk');
+    }
+
+    protected function getSoapSessionCookie(): string
+    {
+        return Cache::remember(
+            self::SOAP_SESSION_CACHE_KEY,
+            self::SESSION_TTL_SECONDS,
+            fn () => $this->soapLogin(),
+        );
+    }
+
+    protected function soapLogin(): string
+    {
+        if (! $this->baseUrl || ! $this->username || ! $this->password) {
+            throw new RuntimeException('กรุณาตั้งค่า VSPHERE_URL, VSPHERE_USERNAME, VSPHERE_PASSWORD ในไฟล์ .env');
+        }
+
+        $body = '<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:vim25="urn:vim25">
+  <soapenv:Body>
+    <vim25:Login>
+      <vim25:_this type="SessionManager">SessionManager</vim25:_this>
+      <vim25:userName>'.$this->xmlEscape($this->username).'</vim25:userName>
+      <vim25:password>'.$this->xmlEscape($this->password).'</vim25:password>
+    </vim25:Login>
+  </soapenv:Body>
+</soapenv:Envelope>';
+
+        $response = $this->soapRequest($body);
+
+        if ($response->failed()) {
+            throw new RuntimeException("ไม่สามารถเข้าสู่ระบบ vCenter (SOAP) ได้ (HTTP {$response->status()})");
+        }
+
+        foreach ($response->toPsrResponse()->getHeader('Set-Cookie') as $setCookie) {
+            if (str_starts_with($setCookie, 'vmware_soap_session')) {
+                return explode(';', $setCookie)[0];
+            }
+        }
+
+        throw new RuntimeException('ไม่พบ vCenter SOAP session cookie');
+    }
+
+    protected function isSoapSessionExpired(Response $response): bool
+    {
+        return $response->status() === 500 && str_contains($response->body(), 'NotAuthenticated');
+    }
+
+    /**
+     * @return array<string, ?string> vm id => ISO 8601 boot time, or null
+     */
+    protected function parseBootTimes(string $body): array
+    {
+        try {
+            $xml = new SimpleXMLElement($body);
+        } catch (Throwable) {
+            return [];
+        }
+
+        $xml->registerXPathNamespace('vim25', 'urn:vim25');
+
+        $bootTimes = [];
+
+        foreach ($xml->xpath('//vim25:returnval') as $returnval) {
+            $returnval->registerXPathNamespace('vim25', 'urn:vim25');
+
+            $id = (string) ($returnval->xpath('vim25:obj')[0] ?? '');
+
+            if ($id === '') {
+                continue;
+            }
+
+            $bootTimes[$id] = null;
+
+            foreach ($returnval->xpath('vim25:propSet') as $propSet) {
+                $propSet->registerXPathNamespace('vim25', 'urn:vim25');
+
+                if ((string) ($propSet->xpath('vim25:name')[0] ?? '') === 'runtime.bootTime') {
+                    $value = (string) ($propSet->xpath('vim25:val')[0] ?? '');
+                    $bootTimes[$id] = $value !== '' ? $value : null;
+                }
+            }
+        }
+
+        return $bootTimes;
+    }
+
+    /**
+     * @return array<string, array{name: string, alarms: array<int, array{alarm: string, status: string, time: ?string, acknowledged: bool}>}>
+     */
+    protected function parseTriggeredAlarms(string $body): array
+    {
+        try {
+            $xml = new SimpleXMLElement($body);
+        } catch (Throwable) {
+            return [];
+        }
+
+        $xml->registerXPathNamespace('vim25', 'urn:vim25');
+
+        $entities = [];
+
+        foreach ($xml->xpath('//vim25:returnval') as $returnval) {
+            $returnval->registerXPathNamespace('vim25', 'urn:vim25');
+
+            $id = (string) ($returnval->xpath('vim25:obj')[0] ?? '');
+
+            if ($id === '') {
+                continue;
+            }
+
+            $name = $id;
+            $alarms = [];
+
+            foreach ($returnval->xpath('vim25:propSet') as $propSet) {
+                $propSet->registerXPathNamespace('vim25', 'urn:vim25');
+
+                $propName = (string) ($propSet->xpath('vim25:name')[0] ?? '');
+
+                if ($propName === 'name') {
+                    $name = (string) ($propSet->xpath('vim25:val')[0] ?? $id);
+                }
+
+                if ($propName === 'triggeredAlarmState') {
+                    foreach ($propSet->xpath('vim25:val/vim25:AlarmState') as $state) {
+                        $state->registerXPathNamespace('vim25', 'urn:vim25');
+
+                        $time = (string) ($state->xpath('vim25:time')[0] ?? '');
+
+                        $alarms[] = [
+                            'alarm' => (string) ($state->xpath('vim25:alarm')[0] ?? ''),
+                            'status' => (string) ($state->xpath('vim25:overallStatus')[0] ?? ''),
+                            'time' => $time !== '' ? $time : null,
+                            'acknowledged' => (string) ($state->xpath('vim25:acknowledged')[0] ?? '') === 'true',
+                        ];
+                    }
+                }
+            }
+
+            if (! empty($alarms)) {
+                $entities[$id] = ['name' => $name, 'alarms' => $alarms];
+            }
+        }
+
+        return $entities;
+    }
+
+    /**
+     * @return array<string, array{name: string, description: string}>
+     */
+    protected function parseAlarmDefinitions(string $body): array
+    {
+        try {
+            $xml = new SimpleXMLElement($body);
+        } catch (Throwable) {
+            return [];
+        }
+
+        $xml->registerXPathNamespace('vim25', 'urn:vim25');
+
+        $definitions = [];
+
+        foreach ($xml->xpath('//vim25:returnval') as $returnval) {
+            $returnval->registerXPathNamespace('vim25', 'urn:vim25');
+
+            $id = (string) ($returnval->xpath('vim25:obj')[0] ?? '');
+
+            if ($id === '') {
+                continue;
+            }
+
+            $name = '';
+            $description = '';
+
+            foreach ($returnval->xpath('vim25:propSet') as $propSet) {
+                $propSet->registerXPathNamespace('vim25', 'urn:vim25');
+
+                $propName = (string) ($propSet->xpath('vim25:name')[0] ?? '');
+                $value = (string) ($propSet->xpath('vim25:val')[0] ?? '');
+
+                if ($propName === 'info.name') {
+                    $name = $value;
+                }
+
+                if ($propName === 'info.description') {
+                    $description = $value;
+                }
+            }
+
+            $definitions[$id] = ['name' => $name, 'description' => $description];
+        }
+
+        return $definitions;
+    }
+
+    protected function xmlEscape(string $value): string
+    {
+        return htmlspecialchars($value, ENT_XML1 | ENT_QUOTES, 'UTF-8');
     }
 
     protected function client(): PendingRequest

@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\AlarmHintService;
+use App\Services\AlarmVsphereService;
+use App\Services\DatastoreTrendService;
 use App\Services\VsphereService;
 use Illuminate\Http\JsonResponse;
 use Throwable;
@@ -31,6 +34,48 @@ class VsphereController extends Controller
     public function appliance(VsphereService $vsphere): JsonResponse
     {
         return $this->respond(fn () => $vsphere->getApplianceOverview());
+    }
+
+    /**
+     * Objects (hosts, VMs, datastores) with currently triggered vCenter
+     * alarms, ranked by alarm count, each alarm annotated with an
+     * AI-generated resolution hint where available.
+     */
+    public function alarms(AlarmVsphereService $alarmService, AlarmHintService $hintService): JsonResponse
+    {
+        return $this->respond(function () use ($alarmService, $hintService) {
+            $objects = $alarmService->pull();
+
+            $allAlarms = collect($objects)->flatMap(fn (array $object) => $object['alarms'])->all();
+            $hints = $hintService->hints($allAlarms);
+
+            foreach ($objects as &$object) {
+                foreach ($object['alarms'] as &$alarm) {
+                    $alarm['hint'] = $hints[$hintService->cacheKey($alarm)] ?? null;
+                }
+            }
+
+            return $objects;
+        });
+    }
+
+    /**
+     * Just the total count of currently triggered alarms — cheap enough to
+     * poll from the sidebar's notification badge without generating AI
+     * hints or resolving alarm definitions.
+     */
+    public function alarmsCount(AlarmVsphereService $alarmService): JsonResponse
+    {
+        return $this->respond(fn () => $alarmService->countTriggeredAlarms());
+    }
+
+    /**
+     * Every datastore with its current usage, recorded history, and a
+     * fill-up projection (once enough history has accumulated).
+     */
+    public function datastoreTrends(DatastoreTrendService $trendService): JsonResponse
+    {
+        return $this->respond(fn () => $trendService->pull());
     }
 
     /**

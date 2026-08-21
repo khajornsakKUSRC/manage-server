@@ -12,10 +12,11 @@ class VmVsphereService
 
     /**
      * Builds one VM inventory row per VM, live from vCenter: host, power
-     * state, allocated vCPU/memory, and — for powered-on VMs with VMware
-     * Tools running — guest IP address, hostname, uptime, and disk space.
-     * Nothing is persisted here; the caller decides whether/when to save
-     * the result.
+     * state, allocated vCPU/memory, and — for powered-on VMs — uptime
+     * (hypervisor-tracked, always available) plus, when VMware Tools is
+     * running in the guest, IP address, hostname, and disk space. Nothing
+     * is persisted here; the caller decides whether/when to save the
+     * result.
      *
      * @return array<int, array<string, mixed>>
      */
@@ -31,11 +32,13 @@ class VmVsphereService
 
         $guestSnapshots = $this->vsphere->getVmGuestSnapshots($poweredOnIds);
         $guestIdentities = $this->vsphere->getVmGuestIdentities($poweredOnIds);
+        $bootTimes = $this->vsphere->getVmBootTimes($poweredOnIds);
 
         return $vms
-            ->map(function (array $vm) use ($hostMap, $guestSnapshots, $guestIdentities) {
-                $guest = $guestSnapshots[$vm['vm']] ?? ['capacity_gb' => null, 'used_gb' => null, 'boot_time' => null];
+            ->map(function (array $vm) use ($hostMap, $guestSnapshots, $guestIdentities, $bootTimes) {
+                $guest = $guestSnapshots[$vm['vm']] ?? ['capacity_gb' => null, 'used_gb' => null];
                 $identity = $guestIdentities[$vm['vm']] ?? ['ip_address' => null, 'host_name' => null];
+                $bootTime = $bootTimes[$vm['vm']] ?? null;
 
                 return [
                     'name' => $vm['name'],
@@ -49,8 +52,8 @@ class VmVsphereService
                         ? (int) round($vm['memory_size_MiB'] / 1024)
                         : null,
                     'cpu_cores' => $vm['cpu_count'] ?? null,
-                    'uptime_seconds' => $guest['boot_time']
-                        ? max(0, Carbon::parse($guest['boot_time'])->diffInSeconds(now()))
+                    'uptime_seconds' => $bootTime
+                        ? max(0, (int) Carbon::parse($bootTime)->diffInSeconds(now()))
                         : null,
                 ];
             })

@@ -25,9 +25,6 @@ class DailyReport extends Model
     protected $fillable = [
         'report_date',
         'created_by',
-        'incident',
-        'action',
-        'remark',
     ];
 
     protected $casts = [
@@ -37,6 +34,11 @@ class DailyReport extends Model
     public function items()
     {
         return $this->hasMany(DailyReportItem::class);
+    }
+
+    public function incidents()
+    {
+        return $this->hasMany(DailyReportIncident::class);
     }
 
     public function createdBy()
