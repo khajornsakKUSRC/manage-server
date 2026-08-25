@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\AlarmHintService;
+use App\Services\AlarmRuleHintService;
 use App\Services\AlarmVsphereService;
 use App\Services\DatastoreTrendService;
 use App\Services\PerformanceVsphereService;
@@ -23,6 +24,17 @@ class VsphereController extends Controller
         return $this->respond(fn () => $vsphere->getHosts());
     }
 
+    /**
+     * One host's network config (gateway, DNS, VMkernel interfaces) — for
+     * the Dashboard's per-host network modal. Fetched on demand per host
+     * rather than bulk-loaded with the host list, since it needs a
+     * separate SOAP call per host.
+     */
+    public function hostNetwork(string $host, VsphereService $vsphere): JsonResponse
+    {
+        return $this->respond(fn () => $vsphere->getHostNetworkInfo($host));
+    }
+
     public function clusters(VsphereService $vsphere): JsonResponse
     {
         return $this->respond(fn () => $vsphere->getClusters());
@@ -40,20 +52,33 @@ class VsphereController extends Controller
 
     /**
      * Objects (hosts, VMs, datastores) with currently triggered vCenter
-     * alarms, ranked by alarm count, each alarm annotated with an
-     * AI-generated resolution hint where available.
+     * alarms, ranked by alarm count, each alarm annotated with a
+     * resolution hint. AI-generated hints (AlarmHintService) are used
+     * where available — needs ANTHROPIC_API_KEY configured — and every
+     * alarm that doesn't get one (no key configured, or that call failed)
+     * falls back to AlarmRuleHintService's local, zero-configuration
+     * keyword lookup, so there's always a suggestion to show.
      */
-    public function alarms(AlarmVsphereService $alarmService, AlarmHintService $hintService): JsonResponse
+    public function alarms(AlarmVsphereService $alarmService, AlarmHintService $hintService, AlarmRuleHintService $ruleHintService): JsonResponse
     {
-        return $this->respond(function () use ($alarmService, $hintService) {
+        return $this->respond(function () use ($alarmService, $hintService, $ruleHintService) {
             $objects = $alarmService->pull();
 
             $allAlarms = collect($objects)->flatMap(fn (array $object) => $object['alarms'])->all();
-            $hints = $hintService->hints($allAlarms);
+            $aiHints = $hintService->hints($allAlarms);
 
             foreach ($objects as &$object) {
                 foreach ($object['alarms'] as &$alarm) {
-                    $alarm['hint'] = $hints[$hintService->cacheKey($alarm)] ?? null;
+                    $aiHint = $aiHints[$hintService->cacheKey($alarm)] ?? null;
+
+                    if ($aiHint !== null) {
+                        $alarm['hint'] = $aiHint;
+                        $alarm['hint_source'] = 'ai';
+                    } else {
+                        $fallback = $ruleHintService->hint($alarm['name'], $alarm['description']);
+                        $alarm['hint'] = $fallback['hint'];
+                        $alarm['hint_source'] = $fallback['source'];
+                    }
                 }
             }
 

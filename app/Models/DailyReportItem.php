@@ -10,6 +10,7 @@ class DailyReportItem extends Model
         'daily_report_id',
         'name',
         'host',
+        'ip',
         'power_state',
         'cpu_count',
         'memory_gb',

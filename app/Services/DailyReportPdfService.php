@@ -23,6 +23,7 @@ class DailyReportPdfService
         $rows = $items->map(fn ($item) => [
             'name' => $item->name,
             'host' => $item->host ?: '-',
+            'ip' => $item->ip ?: '-',
             'up' => $item->power_state === 'POWERED_ON',
             'power_state' => $item->power_state ?: '-',
             'cpu_count' => $item->cpu_count,

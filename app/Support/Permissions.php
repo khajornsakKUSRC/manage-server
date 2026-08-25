@@ -19,6 +19,7 @@ final class Permissions
         'alarms' => 'Alarm Notification',
         'datastores' => 'Datastore',
         'performance' => 'Performance',
+        'smart-detection' => 'Smart Detection',
         'modsecurity' => 'Mod Security',
     ];
 

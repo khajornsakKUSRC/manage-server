@@ -14,6 +14,7 @@ use App\Http\Controllers\EnvironmentController;
 use App\Http\Controllers\ModSecurityController;
 use App\Http\Controllers\HostController;
 use App\Http\Controllers\PerformanceController;
+use App\Http\Controllers\SmartDetectionController;
 use App\Http\Controllers\SystemSettingController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\VmController;
@@ -73,6 +74,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('api/vsphere/performance/metrics', [VsphereController::class, 'performanceMetrics'])->name('vsphere.performance.metrics');
     });
 
+    Route::middleware('page:smart-detection')->group(function () {
+        Route::get('smart-detection', [SmartDetectionController::class, 'index'])->name('smart-detection.index');
+        Route::get('api/smart-detection/findings', [SmartDetectionController::class, 'findings'])->name('smart-detection.findings');
+        Route::get('api/smart-detection/open-count', [SmartDetectionController::class, 'openCount'])->name('smart-detection.open-count');
+        Route::post('smart-detection/findings/{finding}/acknowledge', [SmartDetectionController::class, 'acknowledge'])->name('smart-detection.acknowledge');
+        Route::post('smart-detection/findings/{finding}/resolve', [SmartDetectionController::class, 'resolve'])->name('smart-detection.resolve');
+    });
+
     Route::middleware('page:modsecurity')->group(function () {
         Route::get('modsecurity', [ModSecurityController::class, 'index'])->name('modsecurity.index');
         Route::get('api/modsecurity/logs', [ModSecurityController::class, 'logs'])->name('modsecurity.logs');
@@ -92,6 +101,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('page:hosts,dashboard')->group(function () {
         Route::get('api/vsphere/vms', [VsphereController::class, 'vms'])->name('vsphere.vms');
         Route::get('api/vsphere/hosts', [VsphereController::class, 'hosts'])->name('vsphere.hosts');
+        Route::get('api/vsphere/hosts/{host}/network', [VsphereController::class, 'hostNetwork'])->name('vsphere.hosts.network');
     });
 
     Route::middleware('page:dashboard')->group(function () {

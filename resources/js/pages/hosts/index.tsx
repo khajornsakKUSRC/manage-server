@@ -90,6 +90,17 @@ export default function Index() {
         };
     }, [fetchHostsAndVms]);
 
+    // Powered-on hosts first, so the ones actually serving workloads are
+    // what you see without scrolling past disconnected/powered-off ones.
+    const sortedHosts = useMemo(() => {
+        return [...hosts].sort((a, b) => {
+            const aOn = a.power_state === 'POWERED_ON' ? 0 : 1;
+            const bOn = b.power_state === 'POWERED_ON' ? 0 : 1;
+
+            return aOn - bOn;
+        });
+    }, [hosts]);
+
     const vmsByHost = useMemo(() => {
         const map = new Map<string, VsphereVm[]>();
 
@@ -103,6 +114,17 @@ export default function Index() {
             }
 
             map.get(vm.host)!.push(vm);
+        }
+
+        // Powered-on VMs first within each host, same reasoning as the
+        // host cards themselves.
+        for (const hostVms of map.values()) {
+            hostVms.sort((a, b) => {
+                const aOn = a.power_state === 'POWERED_ON' ? 0 : 1;
+                const bOn = b.power_state === 'POWERED_ON' ? 0 : 1;
+
+                return aOn - bOn;
+            });
         }
 
         return map;
@@ -163,7 +185,7 @@ export default function Index() {
                     </Card>
                 ) : (
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        {hosts.map((host) => {
+                        {sortedHosts.map((host) => {
                             const hostVms = vmsByHost.get(host.name) ?? [];
 
                             return (

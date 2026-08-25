@@ -17,3 +17,9 @@ Schedule::command('datastores:snapshot')->dailyAt('00:05');
 // alarms and down/powered-off VMs, Telegram-notifying on each one not
 // already sent.
 Schedule::command('alarms:notify-telegram')->everyFiveMinutes();
+
+// SSHes into every active VM with an IP (silently skipping any that aren't
+// reachable — e.g. Windows VMs, or ones without the shared guest_ssh
+// credential) to run Smart Detection's five checks, Telegram-notifying on
+// each new/reopened warning-or-critical finding.
+Schedule::command('smart-detection:scan')->everyFifteenMinutes();

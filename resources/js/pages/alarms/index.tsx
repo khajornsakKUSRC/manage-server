@@ -2,6 +2,7 @@ import { Head } from '@inertiajs/react';
 import {
     AlertCircle,
     BellRing,
+    BookOpen,
     CheckCircle2,
     Lightbulb,
     RefreshCw,
@@ -18,6 +19,7 @@ interface AlarmEntry {
     time: string | null;
     acknowledged: boolean;
     hint: string | null;
+    hint_source: 'ai' | 'rule' | null;
 }
 
 interface AlarmObject {
@@ -139,8 +141,9 @@ export default function Index() {
                         </h1>
                         <p className="text-sm text-muted-foreground">
                             Hosts, VMs, and datastores with currently triggered
-                            vCenter alarms, with AI-generated hints on how to
-                            resolve them.
+                            vCenter alarms, with a suggested fix for each —
+                            AI-generated where configured, general guidance
+                            otherwise.
                         </p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -233,7 +236,7 @@ export default function Index() {
                                                     (object.alarms.length /
                                                         objects[0].alarms
                                                             .length) *
-                                                        100,
+                                                    100,
                                                 );
 
                                                 return (
@@ -245,8 +248,8 @@ export default function Index() {
                                                             <Badge
                                                                 className={
                                                                     TYPE_STYLES[
-                                                                        object
-                                                                            .type
+                                                                    object
+                                                                        .type
                                                                     ]
                                                                 }
                                                             >
@@ -307,11 +310,11 @@ export default function Index() {
                                                             <th className="px-3 py-2 font-medium">
                                                                 Triggered At
                                                             </th>
-                                                            <th className="px-3 py-2 font-medium">
+                                                            {/* <th className="px-3 py-2 font-medium">
                                                                 Ack
-                                                            </th>
+                                                            </th> */}
                                                             <th className="px-3 py-2 font-medium">
-                                                                AI Suggested Fix
+                                                                Suggested Fix
                                                             </th>
                                                         </tr>
                                                     </thead>
@@ -331,8 +334,8 @@ export default function Index() {
                                                                             <Badge
                                                                                 className={
                                                                                     TYPE_STYLES[
-                                                                                        object
-                                                                                            .type
+                                                                                    object
+                                                                                        .type
                                                                                     ]
                                                                                 }
                                                                             >
@@ -375,7 +378,7 @@ export default function Index() {
                                                                             alarm.time,
                                                                         )}
                                                                     </td>
-                                                                    <td className="px-3 py-2">
+                                                                    {/* <td className="px-3 py-2">
                                                                         {alarm.acknowledged ? (
                                                                             <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
                                                                         ) : (
@@ -383,22 +386,41 @@ export default function Index() {
                                                                                 -
                                                                             </span>
                                                                         )}
-                                                                    </td>
+                                                                    </td> */}
                                                                     <td className="max-w-sm min-w-[16rem] px-3 py-2">
                                                                         {alarm.hint ? (
-                                                                            <div className="flex items-start gap-1.5 text-sm">
-                                                                                <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
-                                                                                <span>
-                                                                                    {
-                                                                                        alarm.hint
-                                                                                    }
-                                                                                </span>
+                                                                            <div className="space-y-1">
+                                                                                <div className="flex items-start gap-1.5 text-sm">
+                                                                                    {alarm.hint_source ===
+                                                                                        'ai' ? (
+                                                                                        <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+                                                                                    ) : (
+                                                                                        <BookOpen className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                                                                    )}
+                                                                                    <span>
+                                                                                        {
+                                                                                            alarm.hint
+                                                                                        }
+                                                                                    </span>
+                                                                                </div>
+                                                                                {alarm.hint_source ===
+                                                                                    'rule' && (
+                                                                                        <p className="pl-5 text-xs text-muted-foreground italic">
+                                                                                            General
+                                                                                            guidance
+                                                                                            — set
+                                                                                            ANTHROPIC_API_KEY
+                                                                                            for an
+                                                                                            AI-generated
+                                                                                            fix
+                                                                                            specific to
+                                                                                            this alarm.
+                                                                                        </p>
+                                                                                    )}
                                                                             </div>
                                                                         ) : (
                                                                             <span className="text-xs text-muted-foreground">
-                                                                                ไม่มีคำแนะนำ
-                                                                                (ยังไม่ได้ตั้งค่า
-                                                                                AI)
+                                                                                -
                                                                             </span>
                                                                         )}
                                                                     </td>

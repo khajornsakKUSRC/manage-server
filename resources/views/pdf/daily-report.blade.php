@@ -147,6 +147,7 @@
             <tr>
                 <th>VM Name</th>
                 <th>Host</th>
+                <th>IP Address</th>
                 <th>Status</th>
                 <th>CPU</th>
                 <th>RAM</th>
@@ -161,6 +162,7 @@
                 <tr>
                     <td class="name">{{ $row['name'] }}</td>
                     <td>{{ $row['host'] }}</td>
+                    <td>{{ $row['ip'] }}</td>
                     <td class="{{ $row['up'] ? 'status-up' : 'status-down' }}">{{ $row['up'] ? 'UP' : 'DOWN' }}</td>
                     <td>{{ $row['cpu_count'] !== null ? $row['cpu_count'].' vCPU' : '-' }}</td>
                     <td>{{ $row['memory_gb'] !== null ? $row['memory_gb'].' GB' : '-' }}</td>
@@ -173,7 +175,7 @@
                 </tr>
             @empty
                 <tr>
-                    <td colspan="9">ไม่มีข้อมูล VM</td>
+                    <td colspan="10">ไม่มีข้อมูล VM</td>
                 </tr>
             @endforelse
         </tbody>

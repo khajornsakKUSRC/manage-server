@@ -36,6 +36,7 @@ interface ReportRow {
     id?: number;
     name: string;
     host: string | null;
+    ip: string | null;
     power_state: string | null;
     cpu_count: number | null;
     memory_gb: number | null;
@@ -464,6 +465,9 @@ function ReportForm({
                                             Host
                                         </th>
                                         <th className="px-3 py-2 font-medium">
+                                            IP Address
+                                        </th>
+                                        <th className="px-3 py-2 font-medium">
                                             Status
                                         </th>
                                         <th className="px-3 py-2 font-medium">
@@ -497,6 +501,9 @@ function ReportForm({
                                             </td>
                                             <td className="px-3 py-2">
                                                 {row.host || '-'}
+                                            </td>
+                                            <td className="px-3 py-2 whitespace-nowrap">
+                                                {row.ip || '-'}
                                             </td>
                                             <td className="px-3 py-2">
                                                 <Badge

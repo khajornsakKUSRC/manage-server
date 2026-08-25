@@ -51,6 +51,7 @@ interface VmRow {
     cpu_cores: number | null;
     uptime_seconds: number | null;
     notes: string | null;
+    certificate_exp: string | null;
     is_active: boolean;
     host: { id: number; name: string } | null;
 }
@@ -114,6 +115,35 @@ function formatUptime(seconds: number | null): string {
     }
 
     return `${minutes}m`;
+}
+
+// Highlights certificates that are already expired or expiring soon, so
+// they're noticeable while scanning the list rather than needing to open
+// each VM to check.
+function certificateExpClass(certificateExp: string | null): string {
+    if (!certificateExp) {
+        return 'text-muted-foreground';
+    }
+
+    const expiry = new Date(certificateExp);
+
+    if (Number.isNaN(expiry.getTime())) {
+        return '';
+    }
+
+    const daysUntil = Math.floor(
+        (expiry.getTime() - Date.now()) / (24 * 60 * 60 * 1000),
+    );
+
+    if (daysUntil < 0) {
+        return 'font-medium text-red-600 dark:text-red-400';
+    }
+
+    if (daysUntil <= 30) {
+        return 'font-medium text-amber-600 dark:text-amber-400';
+    }
+
+    return '';
 }
 
 function DetailField({ label, value }: { label: string; value: string }) {
@@ -448,6 +478,9 @@ export default function Index({
                                             Active
                                         </th>
                                         <th className="px-3 py-2 font-medium">
+                                            Certificate Exp
+                                        </th>
+                                        <th className="px-3 py-2 font-medium">
                                             Note
                                         </th>
                                         <th className="px-3 py-2 text-right font-medium">
@@ -488,6 +521,11 @@ export default function Index({
                                                         ? 'Active'
                                                         : 'Inactive'}
                                                 </Badge>
+                                            </td>
+                                            <td
+                                                className={`px-3 py-2 whitespace-nowrap ${certificateExpClass(vm.certificate_exp)}`}
+                                            >
+                                                {vm.certificate_exp || '-'}
                                             </td>
                                             <td
                                                 className="max-w-[200px] truncate px-3 py-2"

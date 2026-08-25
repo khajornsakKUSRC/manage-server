@@ -16,8 +16,11 @@ class DailyReportVsphereService
      * Builds one snapshot row per Active VM (per the Manage VMs inventory),
      * live from vCenter: power state (UP/DOWN), allocated vCPU/memory, and
      * — for powered-on VMs — guest disk usage and uptime, plus the
-     * inventory's own Certificate Exp and Note. Nothing is persisted here;
-     * the caller decides whether/when to save the result.
+     * inventory's own IP address, Certificate Exp, and Note (IP comes from
+     * the Manage VMs inventory rather than a fresh live guest-identity call,
+     * same as Certificate Exp/Note — it's already kept in sync via
+     * VmController::sync()). Nothing is persisted here; the caller decides
+     * whether/when to save the result.
      *
      * The Active list in the VMs inventory is the source of truth for
      * which machines count toward the report — not vCenter's live list —
@@ -34,7 +37,7 @@ class DailyReportVsphereService
         $liveByName = collect($this->vsphere->getVms())
             ->keyBy(fn (array $vm) => Str::lower(trim($vm['name'] ?? '')));
 
-        $activeVms = Vm::where('is_active', true)->get(['name', 'certificate_exp', 'notes']);
+        $activeVms = Vm::where('is_active', true)->get(['name', 'ip', 'certificate_exp', 'notes']);
 
         $matches = $activeVms->map(fn (Vm $vm) => [
             'vm' => $vm,
@@ -58,6 +61,7 @@ class DailyReportVsphereService
                     return [
                         'name' => $vm->name,
                         'host' => null,
+                        'ip' => $vm->ip,
                         'power_state' => null,
                         'cpu_count' => null,
                         'memory_gb' => null,
@@ -74,6 +78,7 @@ class DailyReportVsphereService
                 return [
                     'name' => $live['name'],
                     'host' => $hostMap[$live['vm']] ?? null,
+                    'ip' => $vm->ip,
                     'power_state' => $live['power_state'] ?? null,
                     'cpu_count' => $live['cpu_count'] ?? null,
                     'memory_gb' => isset($live['memory_size_MiB'])

@@ -646,6 +646,125 @@ class VsphereService
         return $series;
     }
 
+    /**
+     * A host's network configuration — default gateway, DNS (servers,
+     * domain, search domains), and each VMkernel interface's IP/subnet/MAC
+     * — read via the classic SOAP API's HostSystem.config.network, since
+     * the REST `/api/vcenter/host` surface doesn't expose networking
+     * details at all. Used by the Dashboard's per-host network modal.
+     *
+     * @return array{
+     *     vnics: array<int, array{device: string, portgroup: ?string, ip_address: ?string, subnet_mask: ?string, mac: ?string}>,
+     *     dns: ?array{host_name: ?string, domain_name: ?string, addresses: array<int, string>, search_domains: array<int, string>},
+     *     default_gateway: ?string,
+     * }
+     */
+    public function getHostNetworkInfo(string $hostId, bool $isRetry = false): array
+    {
+        $cookie = $this->getSoapSessionCookie();
+
+        $body = '<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:vim25="urn:vim25">
+  <soapenv:Body>
+    <vim25:RetrieveProperties>
+      <vim25:_this type="PropertyCollector">propertyCollector</vim25:_this>
+      <vim25:specSet>
+        <vim25:propSet>
+          <vim25:type>HostSystem</vim25:type>
+          <vim25:pathSet>config.network</vim25:pathSet>
+        </vim25:propSet>
+        <vim25:objectSet>
+          <vim25:obj type="HostSystem">'.$this->xmlEscape($hostId).'</vim25:obj>
+        </vim25:objectSet>
+      </vim25:specSet>
+    </vim25:RetrieveProperties>
+  </soapenv:Body>
+</soapenv:Envelope>';
+
+        $response = $this->soapRequest($body, $cookie);
+
+        if ($this->isSoapSessionExpired($response) && ! $isRetry) {
+            Cache::forget(self::SOAP_SESSION_CACHE_KEY);
+
+            return $this->getHostNetworkInfo($hostId, isRetry: true);
+        }
+
+        if ($response->failed()) {
+            throw new RuntimeException("ไม่สามารถโหลดข้อมูล Network ของ Host ได้ (HTTP {$response->status()})");
+        }
+
+        return $this->parseHostNetworkInfo($response->body());
+    }
+
+    /**
+     * @return array{vnics: array<int, array<string, mixed>>, dns: ?array<string, mixed>, default_gateway: ?string}
+     */
+    protected function parseHostNetworkInfo(string $body): array
+    {
+        $empty = ['vnics' => [], 'dns' => null, 'default_gateway' => null];
+
+        try {
+            $xml = new SimpleXMLElement($body);
+        } catch (Throwable) {
+            return $empty;
+        }
+
+        $xml->registerXPathNamespace('vim25', 'urn:vim25');
+
+        $network = ($xml->xpath('//vim25:returnval/vim25:propSet/vim25:val') ?: [])[0] ?? null;
+
+        if ($network === null) {
+            return $empty;
+        }
+
+        $network->registerXPathNamespace('vim25', 'urn:vim25');
+
+        $vnics = [];
+
+        foreach ($network->xpath('vim25:vnic') as $vnic) {
+            $vnic->registerXPathNamespace('vim25', 'urn:vim25');
+
+            $vnics[] = [
+                'device' => (string) ($vnic->xpath('vim25:device')[0] ?? ''),
+                'portgroup' => $this->nullableText($vnic, 'vim25:portgroup'),
+                'ip_address' => $this->nullableText($vnic, 'vim25:spec/vim25:ip/vim25:ipAddress'),
+                'subnet_mask' => $this->nullableText($vnic, 'vim25:spec/vim25:ip/vim25:subnetMask'),
+                'mac' => $this->nullableText($vnic, 'vim25:spec/vim25:mac'),
+            ];
+        }
+
+        $dns = null;
+        $dnsNode = ($network->xpath('vim25:dnsConfig') ?: [])[0] ?? null;
+
+        if ($dnsNode !== null) {
+            $dnsNode->registerXPathNamespace('vim25', 'urn:vim25');
+
+            $dns = [
+                'host_name' => $this->nullableText($dnsNode, 'vim25:hostName'),
+                'domain_name' => $this->nullableText($dnsNode, 'vim25:domainName'),
+                'addresses' => collect($dnsNode->xpath('vim25:address'))->map(fn ($n) => (string) $n)->all(),
+                'search_domains' => collect($dnsNode->xpath('vim25:searchDomain'))->map(fn ($n) => (string) $n)->all(),
+            ];
+        }
+
+        $defaultGateway = null;
+        $routeNode = ($network->xpath('vim25:ipRouteConfig') ?: [])[0] ?? null;
+
+        if ($routeNode !== null) {
+            $routeNode->registerXPathNamespace('vim25', 'urn:vim25');
+            $defaultGateway = $this->nullableText($routeNode, 'vim25:defaultGateway');
+        }
+
+        return ['vnics' => $vnics, 'dns' => $dns, 'default_gateway' => $defaultGateway];
+    }
+
+    protected function nullableText(SimpleXMLElement $node, string $xpath): ?string
+    {
+        $value = (string) ($node->xpath($xpath)[0] ?? '');
+
+        return $value !== '' ? $value : null;
+    }
+
     protected function pooled(PendingRequest $request, string $sessionId): PendingRequest
     {
         $request = $request->timeout(30)->withHeaders(['vmware-api-session-id' => $sessionId]);

@@ -1,13 +1,14 @@
 import { Head } from '@inertiajs/react';
 import {
-    Server,
-    Monitor,
-    RefreshCw,
     AlertCircle,
     Droplets,
     HardDrive,
+    Monitor,
+    Network,
     Power,
     PowerOff,
+    RefreshCw,
+    Server,
     Thermometer,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -15,6 +16,12 @@ import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useAppearance } from '@/hooks/use-appearance';
 import { dashboard } from '@/routes';
@@ -32,6 +39,27 @@ interface VsphereHost {
     name: string;
     connection_state: string;
     power_state: string;
+}
+
+interface HostVnic {
+    device: string;
+    portgroup: string | null;
+    ip_address: string | null;
+    subnet_mask: string | null;
+    mac: string | null;
+}
+
+interface HostDns {
+    host_name: string | null;
+    domain_name: string | null;
+    addresses: string[];
+    search_domains: string[];
+}
+
+interface HostNetworkInfo {
+    vnics: HostVnic[];
+    dns: HostDns | null;
+    default_gateway: string | null;
 }
 
 interface VsphereDatastore {
@@ -278,6 +306,30 @@ export default function Dashboard() {
     );
     const [vmSearch, setVmSearch] = useState('');
 
+    const [networkHost, setNetworkHost] = useState<VsphereHost | null>(null);
+    const [networkInfo, setNetworkInfo] = useState<HostNetworkInfo | null>(
+        null,
+    );
+    const [networkLoading, setNetworkLoading] = useState(false);
+    const [networkError, setNetworkError] = useState<string | null>(null);
+
+    // Triggered by clicking a host row (an event handler, not an effect),
+    // so setting state synchronously up front here is fine.
+    const openHostNetwork = (host: VsphereHost) => {
+        setNetworkHost(host);
+        setNetworkInfo(null);
+        setNetworkError(null);
+        setNetworkLoading(true);
+
+        fetch(`/api/vsphere/hosts/${host.host}/network`)
+            .then((res) => (res.ok ? res.json() : Promise.reject()))
+            .then((json) => setNetworkInfo(json.data ?? null))
+            .catch(() =>
+                setNetworkError('ไม่สามารถโหลดข้อมูล Network ของ Host นี้ได้'),
+            )
+            .finally(() => setNetworkLoading(false));
+    };
+
     const [environment, setEnvironment] = useState<EnvironmentPayload | null>(
         null,
     );
@@ -397,6 +449,19 @@ export default function Dashboard() {
         const usedPct = capacity > 0 ? Math.round((used / capacity) * 100) : 0;
 
         return { capacity, free, used, usedPct };
+    }, [vsphere]);
+
+    // Closest-to-full first, so the datastore most at risk of filling up is
+    // the first thing you see rather than needing to scan the whole list.
+    const sortedDatastores = useMemo(() => {
+        const usedPct = (ds: VsphereDatastore) =>
+            ds.capacity > 0
+                ? (ds.capacity - ds.free_space) / ds.capacity
+                : 0;
+
+        return [...(vsphere?.datastores ?? [])].sort(
+            (a, b) => usedPct(b) - usedPct(a),
+        );
     }, [vsphere]);
 
     const filteredVsphereVms = useMemo(() => {
@@ -616,11 +681,17 @@ export default function Dashboard() {
                                                 <div className="space-y-2">
                                                     {vsphere.hosts.map(
                                                         (host) => (
-                                                            <div
+                                                            <button
                                                                 key={
                                                                     host.host
                                                                 }
-                                                                className="flex items-center justify-between rounded-lg border p-3"
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    openHostNetwork(
+                                                                        host,
+                                                                    )
+                                                                }
+                                                                className="flex w-full items-center justify-between rounded-lg border p-3 text-left transition-colors hover:border-primary/50 hover:bg-muted/30"
                                                             >
                                                                 <div>
                                                                     <p className="text-sm font-medium">
@@ -646,7 +717,7 @@ export default function Dashboard() {
                                                                         host.connection_state
                                                                     }
                                                                 </span>
-                                                            </div>
+                                                            </button>
                                                         ),
                                                     )}
                                                 </div>
@@ -668,7 +739,7 @@ export default function Dashboard() {
                                                     ไม่มีข้อมูล Datastore
                                                 </p>
                                             ) : (
-                                                vsphere.datastores.map(
+                                                sortedDatastores.map(
                                                     (ds) => {
                                                         const used =
                                                             ds.capacity -
@@ -835,6 +906,127 @@ export default function Dashboard() {
                     )}
                 </div>
             </div>
+
+            <Dialog
+                open={networkHost !== null}
+                onOpenChange={(open) => !open && setNetworkHost(null)}
+            >
+                <DialogContent className="max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <Network className="h-4 w-4 text-muted-foreground" />
+                            {networkHost?.name} — Network
+                        </DialogTitle>
+                    </DialogHeader>
+
+                    {networkLoading ? (
+                        <div className="h-32 animate-pulse rounded bg-muted" />
+                    ) : networkError ? (
+                        <p className="text-sm text-red-600 dark:text-red-400">
+                            {networkError}
+                        </p>
+                    ) : (
+                        networkInfo && (
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <p className="text-xs text-muted-foreground">
+                                            Default Gateway
+                                        </p>
+                                        <p className="text-sm font-medium">
+                                            {networkInfo.default_gateway ||
+                                                '-'}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-muted-foreground">
+                                            Domain
+                                        </p>
+                                        <p className="text-sm font-medium">
+                                            {networkInfo.dns?.domain_name ||
+                                                '-'}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-muted-foreground">
+                                            DNS Servers
+                                        </p>
+                                        <p className="text-sm font-medium">
+                                            {networkInfo.dns &&
+                                            networkInfo.dns.addresses.length >
+                                                0
+                                                ? networkInfo.dns.addresses.join(
+                                                      ', ',
+                                                  )
+                                                : '-'}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-muted-foreground">
+                                            Search Domains
+                                        </p>
+                                        <p className="text-sm font-medium">
+                                            {networkInfo.dns &&
+                                            networkInfo.dns.search_domains
+                                                .length > 0
+                                                ? networkInfo.dns.search_domains.join(
+                                                      ', ',
+                                                  )
+                                                : '-'}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <p className="mb-2 text-xs font-medium text-muted-foreground uppercase">
+                                        VMkernel Interfaces
+                                    </p>
+                                    {networkInfo.vnics.length === 0 ? (
+                                        <p className="text-sm text-muted-foreground">
+                                            ไม่มีข้อมูล VMkernel
+                                        </p>
+                                    ) : (
+                                        <div className="space-y-1.5">
+                                            {networkInfo.vnics.map((vnic) => (
+                                                <div
+                                                    key={vnic.device}
+                                                    className="rounded-md border p-2 text-sm"
+                                                >
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="font-medium">
+                                                            {vnic.device}
+                                                        </span>
+                                                        <span className="text-xs text-muted-foreground">
+                                                            {vnic.portgroup ||
+                                                                '-'}
+                                                        </span>
+                                                    </div>
+                                                    <div className="mt-1 grid grid-cols-2 gap-1 text-xs text-muted-foreground">
+                                                        <span>
+                                                            IP:{' '}
+                                                            {vnic.ip_address ||
+                                                                '-'}
+                                                        </span>
+                                                        <span>
+                                                            Subnet:{' '}
+                                                            {vnic.subnet_mask ||
+                                                                '-'}
+                                                        </span>
+                                                        <span className="col-span-2">
+                                                            MAC:{' '}
+                                                            {vnic.mac || '-'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )
+                    )}
+                </DialogContent>
+            </Dialog>
         </>
     );
 }
