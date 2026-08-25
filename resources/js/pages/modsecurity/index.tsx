@@ -260,14 +260,19 @@ export default function Index({ vms }: Props) {
                     entries && (
                         <Card className="flex min-h-0 flex-1 flex-col">
                             <CardHeader className="flex flex-row items-center justify-between space-y-0">
-                                <CardTitle>
-                                    {filterActive
-                                        ? `Errors ในช่วงที่เลือก`
-                                        : 'Last 5 Errors'}
-                                    <span className="ml-2 text-sm font-normal text-muted-foreground">
-                                        {entries.length} รายการ
-                                    </span>
-                                </CardTitle>
+                                <div className="flex items-center gap-2">
+                                    <div className="rounded-lg bg-rose-100 p-2 dark:bg-rose-900/30">
+                                        <ShieldAlert className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+                                    </div>
+                                    <CardTitle>
+                                        {filterActive
+                                            ? `Errors ในช่วงที่เลือก`
+                                            : 'Last 5 Errors'}
+                                        <span className="ml-2 text-sm font-normal text-muted-foreground">
+                                            {entries.length} รายการ
+                                        </span>
+                                    </CardTitle>
+                                </div>
                             </CardHeader>
                             <CardContent className="min-h-0 flex-1 space-y-3 overflow-auto">
                                 {entries.map((entry) => (

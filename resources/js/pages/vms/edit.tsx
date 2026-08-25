@@ -1,4 +1,5 @@
 import { Head, Link, useForm } from '@inertiajs/react';
+import { Monitor, PenLine } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -93,7 +94,10 @@ export default function Edit({ vm }: { vm: VmDetail }) {
                 </div>
 
                 <Card>
-                    <CardHeader>
+                    <CardHeader className="flex flex-row items-center gap-2 space-y-0">
+                        <div className="rounded-lg bg-blue-100 p-2 dark:bg-blue-900/30">
+                            <Monitor className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                        </div>
                         <CardTitle>ข้อมูลจากระบบ (vCenter)</CardTitle>
                     </CardHeader>
                     <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-3">
@@ -144,7 +148,10 @@ export default function Edit({ vm }: { vm: VmDetail }) {
 
                 <Card>
                     <form onSubmit={submit}>
-                        <CardHeader>
+                        <CardHeader className="flex flex-row items-center gap-2 space-y-0">
+                            <div className="rounded-lg bg-slate-100 p-2 dark:bg-slate-800">
+                                <PenLine className="h-4 w-4 text-slate-600 dark:text-slate-400" />
+                            </div>
                             <CardTitle>ข้อมูลที่กรอกด้วยตนเอง</CardTitle>
                         </CardHeader>
                         <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -154,7 +161,7 @@ export default function Edit({ vm }: { vm: VmDetail }) {
                                 </Label>
                                 <Input
                                     id="certificate_exp"
-                                    placeholder="e.g. 2027-01-31"
+                                    type="date"
                                     value={data.certificate_exp}
                                     onChange={(e) =>
                                         setData(

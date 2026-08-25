@@ -18,6 +18,7 @@ final class Permissions
         'daily-reports' => 'Daily Report',
         'alarms' => 'Alarm Notification',
         'datastores' => 'Datastore',
+        'performance' => 'Performance',
         'modsecurity' => 'Mod Security',
     ];
 

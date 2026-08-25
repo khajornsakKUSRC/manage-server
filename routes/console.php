@@ -14,5 +14,6 @@ Artisan::command('inspire', function () {
 Schedule::command('datastores:snapshot')->dailyAt('00:05');
 
 // Same scheduler dependency as above — polls vCenter for newly triggered
-// alarms and Telegram-notifies on each one not already sent.
+// alarms and down/powered-off VMs, Telegram-notifying on each one not
+// already sent.
 Schedule::command('alarms:notify-telegram')->everyFiveMinutes();

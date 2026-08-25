@@ -3,10 +3,13 @@ import {
     Activity,
     BellRing,
     Database,
+    History,
     LayoutGrid,
+    LineChart,
     Server,
     Monitor,
     ClipboardList,
+    Settings,
     ShieldAlert,
     Users,
 } from 'lucide-react';
@@ -75,6 +78,12 @@ const mainNavItems: PermissionedNavItem[] = [
         permission: 'datastores',
     },
     {
+        title: 'Performance',
+        href: '/performance',
+        icon: LineChart,
+        permission: 'performance',
+    },
+    {
         title: 'Mod Security',
         href: '/modsecurity',
         icon: ShieldAlert,
@@ -86,13 +95,26 @@ const mainNavItems: PermissionedNavItem[] = [
         icon: Users,
         adminOnly: true,
     },
+    {
+        title: 'Activity Log',
+        href: '/activity-log',
+        icon: History,
+        adminOnly: true,
+    },
+    {
+        title: 'Settings',
+        href: '/system-settings',
+        icon: Settings,
+        adminOnly: true,
+    },
 ];
 
 const ALARM_COUNT_POLL_MS = 60_000;
 
 export function AppSidebar() {
-    const { auth } = usePage().props;
+    const { auth, siteSettings } = usePage().props;
     const user = auth.user;
+    const disabledPages = new Set(siteSettings.disabled_pages ?? []);
 
     const visibleNavItems = mainNavItems.filter((item) => {
         if (!user) {
@@ -153,9 +175,16 @@ export function AppSidebar() {
         };
     }, [hasAlarmsAccess]);
 
-    const itemsWithBadges = visibleNavItems.map((item) =>
-        item.href === '/alarms' ? { ...item, badge: alarmCount } : item,
-    );
+    const itemsWithBadges = visibleNavItems.map((item) => ({
+        ...item,
+        // Keeps blinking the whole time there's at least one triggered
+        // alarm — like an unread-message badge — rather than just a brief
+        // flash, so it stays noticeable until the alarms are cleared.
+        ...(item.href === '/alarms'
+            ? { badge: alarmCount, badgePulse: alarmCount > 0 }
+            : null),
+        disabled: !!item.permission && disabledPages.has(item.permission),
+    }));
 
     return (
         <Sidebar collapsible="icon" variant="inset">

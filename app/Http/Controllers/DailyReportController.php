@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\DailyReport;
 use App\Models\DailyReportIncident;
 use App\Models\DailyReportItem;
+use App\Services\ActivityLogger;
 use App\Services\DailyReportPdfService;
 use App\Services\DailyReportTelegramService;
 use App\Services\DailyReportVsphereService;
@@ -60,7 +61,7 @@ class DailyReportController extends Controller
         return response()->json(['items' => $items]);
     }
 
-    public function store(Request $request, DailyReportTelegramService $telegramService): RedirectResponse
+    public function store(Request $request, DailyReportTelegramService $telegramService, ActivityLogger $activityLogger): RedirectResponse
     {
         $validated = $request->validate([
             'report_date' => 'required|date_format:Y-m-d',
@@ -130,6 +131,13 @@ class DailyReportController extends Controller
 
             return $report;
         });
+
+        $activityLogger->record(
+            action: $report->wasRecentlyCreated ? 'created' : 'updated',
+            description: ($report->wasRecentlyCreated ? 'Created' : 'Updated')." daily report for {$validated['report_date']}",
+            subjectType: 'daily_report',
+            subjectLabel: $validated['report_date'],
+        );
 
         // Best-effort — a failed Telegram send never blocks the save that
         // already succeeded above.

@@ -1,4 +1,5 @@
 import { Head, Link, useForm } from '@inertiajs/react';
+import { UserCog } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -66,14 +67,16 @@ export default function Edit({
 
                 <Card>
                     <form onSubmit={submit}>
-                        <CardHeader>
+                        <CardHeader className="flex flex-row items-center gap-2 space-y-0">
+                            <div className="rounded-lg bg-teal-100 p-2 dark:bg-teal-900/30">
+                                <UserCog className="h-4 w-4 text-teal-600 dark:text-teal-400" />
+                            </div>
                             <CardTitle>User Details</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <div className="space-y-2">
                                 <Label htmlFor="name">
-                                    Name{' '}
-                                    <span className="text-red-500">*</span>
+                                    Name <span className="text-red-500">*</span>
                                 </Label>
                                 <Input
                                     id="name"
@@ -121,10 +124,7 @@ export default function Edit({
                                         type="password"
                                         value={data.password}
                                         onChange={(e) =>
-                                            setData(
-                                                'password',
-                                                e.target.value,
-                                            )
+                                            setData('password', e.target.value)
                                         }
                                         placeholder="Leave blank to keep current"
                                     />

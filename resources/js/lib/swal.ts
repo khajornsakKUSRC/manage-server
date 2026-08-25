@@ -31,3 +31,24 @@ export function notifyError(message: string, title = 'เกิดข้อผ�
 export function notifyInfo(message: string, title?: string): void {
     void themedToast().fire({ icon: 'info', title, text: message });
 }
+
+/**
+ * A centered, must-acknowledge modal (not the auto-dismissing toast the
+ * helpers above use) — for messages the user needs to actually read, like
+ * the maintenance-mode notice shown before login.
+ */
+export function alertMaintenance(
+    message: string,
+    title = 'ระบบอยู่ระหว่างการปรับปรุง',
+): void {
+    const isDark = document.documentElement.classList.contains('dark');
+
+    void Swal.fire({
+        icon: 'warning',
+        title,
+        text: message,
+        confirmButtonText: 'เข้าใจแล้ว',
+        background: isDark ? '#1f2937' : '#ffffff',
+        color: isDark ? '#f3f4f6' : '#111827',
+    });
+}

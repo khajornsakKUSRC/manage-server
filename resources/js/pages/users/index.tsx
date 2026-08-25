@@ -1,4 +1,6 @@
 import { Head, Link, router } from '@inertiajs/react';
+import { Users } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -9,6 +11,28 @@ interface UserRow {
     is_admin: boolean;
     permissions: string[] | null;
     created_at: string;
+    is_online: boolean;
+}
+
+const ONLINE_STATUS_POLL_MS = 15_000;
+
+function OnlineStatusBadge({ online }: { online: boolean }) {
+    return (
+        <span className="inline-flex items-center gap-1.5 text-xs font-medium">
+            <span
+                className={`h-2 w-2 rounded-full ${online ? 'bg-green-500' : 'bg-gray-400'}`}
+            />
+            <span
+                className={
+                    online
+                        ? 'text-green-700 dark:text-green-400'
+                        : 'text-muted-foreground'
+                }
+            >
+                {online ? 'Online' : 'Offline'}
+            </span>
+        </span>
+    );
 }
 
 export default function Index({
@@ -20,6 +44,36 @@ export default function Index({
     pages: Record<string, string>;
     currentUserId: number;
 }) {
+    const [onlineIds, setOnlineIds] = useState<Set<number>>(
+        () => new Set(users.filter((u) => u.is_online).map((u) => u.id)),
+    );
+
+    // Polls a lightweight endpoint (just ids, no full user payload) so the
+    // Online/Offline column stays live without a full page reload.
+    useEffect(() => {
+        let cancelled = false;
+
+        const load = () => {
+            fetch('/users/online-status')
+                .then((res) => (res.ok ? res.json() : Promise.reject()))
+                .then((json) => {
+                    if (!cancelled && Array.isArray(json.online_ids)) {
+                        setOnlineIds(new Set(json.online_ids));
+                    }
+                })
+                .catch(() => {
+                    // Silently ignore — the column just keeps its last known state.
+                });
+        };
+
+        const interval = setInterval(load, ONLINE_STATUS_POLL_MS);
+
+        return () => {
+            cancelled = true;
+            clearInterval(interval);
+        };
+    }, []);
+
     return (
         <>
             <Head title="Manage Users" />
@@ -32,7 +86,10 @@ export default function Index({
                 </div>
 
                 <Card>
-                    <CardHeader>
+                    <CardHeader className="flex flex-row items-center gap-2 space-y-0">
+                        <div className="rounded-lg bg-teal-100 p-2 dark:bg-teal-900/30">
+                            <Users className="h-4 w-4 text-teal-600 dark:text-teal-400" />
+                        </div>
                         <CardTitle>All Users ({users.length})</CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -53,6 +110,9 @@ export default function Index({
                                             </th>
                                             <th className="px-4 py-2 font-medium">
                                                 Access
+                                            </th>
+                                            <th className="px-4 py-2 font-medium">
+                                                Status
                                             </th>
                                             <th className="px-4 py-2 text-right font-medium">
                                                 Actions
@@ -104,6 +164,13 @@ export default function Index({
                                                             ))}
                                                         </div>
                                                     )}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <OnlineStatusBadge
+                                                        online={onlineIds.has(
+                                                            user.id,
+                                                        )}
+                                                    />
                                                 </td>
                                                 <td className="px-4 py-3 text-right">
                                                     <Button

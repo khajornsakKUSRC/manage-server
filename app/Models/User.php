@@ -26,6 +26,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property string|null $two_factor_recovery_codes
  * @property Carbon|null $two_factor_confirmed_at
  * @property string|null $remember_token
+ * @property Carbon|null $last_seen_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -35,6 +36,13 @@ class User extends Authenticatable implements PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
+
+    /**
+     * A user is considered "online" if last_seen_at (updated on every
+     * authenticated request — see TrackUserActivity) falls within this many
+     * seconds of now.
+     */
+    public const ONLINE_THRESHOLD_SECONDS = 120;
 
     /**
      * Get the attributes that should be cast.
@@ -49,6 +57,7 @@ class User extends Authenticatable implements PasskeyUser
             'two_factor_confirmed_at' => 'datetime',
             'is_admin' => 'boolean',
             'permissions' => 'array',
+            'last_seen_at' => 'datetime',
         ];
     }
 
@@ -59,5 +68,11 @@ class User extends Authenticatable implements PasskeyUser
     public function canAccess(string $page): bool
     {
         return $this->is_admin || in_array($page, $this->permissions ?? [], true);
+    }
+
+    public function isOnline(): bool
+    {
+        return $this->last_seen_at !== null
+            && $this->last_seen_at->gte(now()->subSeconds(self::ONLINE_THRESHOLD_SECONDS));
     }
 }

@@ -2,11 +2,40 @@
 
 namespace App\Services;
 
+use App\Models\Vm;
+use Illuminate\Support\Str;
+
 class AlarmVsphereService
 {
     public function __construct(
         protected VsphereService $vsphere,
     ) {}
+
+    /**
+     * Every Active VM (per the Manage VMs inventory) whose live vCenter
+     * power state isn't POWERED_ON — either genuinely powered off/suspended,
+     * or missing from vCenter entirely (renamed/removed), which counts as
+     * down rather than silently ignored. Only the REST power-state list is
+     * queried — no guest-tools or SOAP calls — since that's all a plain
+     * up/down check needs.
+     *
+     * @return array<int, array{name: string, power_state: ?string}>
+     */
+    public function downVms(): array
+    {
+        $liveByName = collect($this->vsphere->getVms())
+            ->keyBy(fn (array $vm) => Str::lower(trim($vm['name'] ?? '')));
+
+        return Vm::active()
+            ->get(['name'])
+            ->map(fn (Vm $vm) => [
+                'name' => $vm->name,
+                'power_state' => $liveByName->get(Str::lower(trim($vm->name)))['power_state'] ?? null,
+            ])
+            ->filter(fn (array $vm) => $vm['power_state'] !== 'POWERED_ON')
+            ->values()
+            ->all();
+    }
 
     /**
      * Builds one row per Host/VM/Datastore that currently has a triggered

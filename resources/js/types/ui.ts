@@ -19,3 +19,13 @@ export type AuthLayoutProps = {
     title?: string;
     description?: string;
 };
+
+// Shared on every page via Inertia (see HandleInertiaRequests), including
+// the unauthenticated login page.
+export type SiteSettings = {
+    maintenance_enabled: boolean;
+    maintenance_message: string | null;
+    footer_text: string | null;
+    favicon_url: string | null;
+    disabled_pages: string[];
+};

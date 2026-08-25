@@ -66,14 +66,15 @@ function formatDate(date: string): string {
     });
 }
 
-// Same thresholds as the disk-usage badges elsewhere in the app
-// (daily-reports, appliance) — kept consistent.
-function usageBadgeClass(pct: number): string {
-    if (pct >= 85) {
+// Thresholds default to the same values used elsewhere in the app
+// (daily-reports, appliance) — overridden by Settings → Monitoring →
+// Datastore when provided.
+function usageBadgeClass(pct: number, warning = 70, critical = 85): string {
+    if (pct >= critical) {
         return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
     }
 
-    if (pct >= 70) {
+    if (pct >= warning) {
         return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400';
     }
 
@@ -107,15 +108,13 @@ function buildChartData(
     if (projection) {
         // projection[0] is the same point as the last history entry
         // (already added above) — only append what comes after it.
-        projection
-            .slice(1)
-            .forEach((p) =>
-                points.push({
-                    date: p.date,
-                    actual: null,
-                    projected: p.used_pct,
-                }),
-            );
+        projection.slice(1).forEach((p) =>
+            points.push({
+                date: p.date,
+                actual: null,
+                projected: p.used_pct,
+            }),
+        );
     }
 
     return points;
@@ -159,7 +158,13 @@ function ChartTooltip({
     );
 }
 
-function DatastoreCard({ datastore }: { datastore: DatastoreTrend }) {
+function DatastoreCard({
+    datastore,
+    thresholds,
+}: {
+    datastore: DatastoreTrend;
+    thresholds: Thresholds;
+}) {
     const { resolvedAppearance } = useAppearance();
     const seriesColor = SERIES_COLOR[resolvedAppearance];
     const gridColor = GRID_COLOR[resolvedAppearance];
@@ -196,7 +201,13 @@ function DatastoreCard({ datastore }: { datastore: DatastoreTrend }) {
                     </div>
 
                     <div className="flex items-center gap-2">
-                        <Badge className={usageBadgeClass(datastore.used_pct)}>
+                        <Badge
+                            className={usageBadgeClass(
+                                datastore.used_pct,
+                                thresholds.warning_pct,
+                                thresholds.critical_pct,
+                            )}
+                        >
                             {datastore.used_pct}% used
                         </Badge>
                     </div>
@@ -338,7 +349,12 @@ function DatastoreCard({ datastore }: { datastore: DatastoreTrend }) {
     );
 }
 
-export default function Index() {
+interface Thresholds {
+    warning_pct: number;
+    critical_pct: number;
+}
+
+export default function Index({ thresholds }: { thresholds: Thresholds }) {
     const [datastores, setDatastores] = useState<DatastoreTrend[] | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -464,6 +480,7 @@ export default function Index() {
                                 <DatastoreCard
                                     key={datastore.name}
                                     datastore={datastore}
+                                    thresholds={thresholds}
                                 />
                             ))}
                         </div>

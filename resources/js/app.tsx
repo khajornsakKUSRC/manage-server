@@ -1,4 +1,5 @@
 import { createInertiaApp } from '@inertiajs/react';
+import { GlobalLoader } from '@/components/global-loader';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { initializeTheme } from '@/hooks/use-appearance';
@@ -26,12 +27,11 @@ createInertiaApp({
             <TooltipProvider delayDuration={0}>
                 {app}
                 <Toaster />
+                <GlobalLoader />
             </TooltipProvider>
         );
     },
-    progress: {
-        color: '#4B5563',
-    },
+    progress: false,
 });
 
 // This will set light / dark mode on load...

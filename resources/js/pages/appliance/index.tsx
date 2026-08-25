@@ -3,9 +3,13 @@ import {
     AlertCircle,
     ArrowLeftRight,
     Cpu,
+    Database,
+    Gauge,
     HardDrive,
     MemoryStick,
+    PackageCheck,
     RefreshCw,
+    Settings2,
     ShieldCheck,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -24,16 +28,16 @@ interface ApplianceOverview {
     metrics: ApplianceMetric[];
 }
 
-const HEALTH_COMPONENTS: { key: string; label: string }[] = [
-    { key: 'system', label: 'Overall System' },
-    { key: 'cpu', label: 'CPU' },
-    { key: 'mem', label: 'Memory' },
-    { key: 'swap', label: 'Swap' },
-    { key: 'storage', label: 'Storage' },
-    { key: 'database_storage', label: 'Database Storage' },
-    { key: 'load', label: 'System Load' },
-    { key: 'applmgmt', label: 'Appliance Management' },
-    { key: 'software_packages', label: 'Software Updates' },
+const HEALTH_COMPONENTS: { key: string; label: string; icon: typeof Cpu }[] = [
+    { key: 'system', label: 'Overall System', icon: ShieldCheck },
+    { key: 'cpu', label: 'CPU', icon: Cpu },
+    { key: 'mem', label: 'Memory', icon: MemoryStick },
+    { key: 'swap', label: 'Swap', icon: ArrowLeftRight },
+    { key: 'storage', label: 'Storage', icon: HardDrive },
+    { key: 'database_storage', label: 'Database Storage', icon: Database },
+    { key: 'load', label: 'System Load', icon: Gauge },
+    { key: 'applmgmt', label: 'Appliance Management', icon: Settings2 },
+    { key: 'software_packages', label: 'Software Updates', icon: PackageCheck },
 ];
 
 const METRIC_GROUPS: {
@@ -45,7 +49,6 @@ const METRIC_GROUPS: {
     { key: 'cpu', label: 'CPU', icon: Cpu, prefix: 'cpu.' },
     { key: 'mem', label: 'Memory', icon: MemoryStick, prefix: 'mem.' },
     { key: 'swap', label: 'Swap', icon: ArrowLeftRight, prefix: 'swap.' },
-    { key: 'storage', label: 'Storage', icon: HardDrive, prefix: 'storage.' },
 ];
 
 const HEALTH_STYLES: Record<
@@ -170,10 +173,11 @@ const ID_WORD_LABELS: Record<string, string> = {
     totalfrequency: 'Total Frequency',
     systemload: 'System Load',
     pagerate: 'Page Rate',
-    db: 'DB',
+    db: 'Database',
     dblog: 'DB Log',
     swap: 'Swap',
     storage: 'Storage',
+    seat: 'Seat',
 };
 
 function humanizeIdSegment(id: string): string {
@@ -189,19 +193,117 @@ function humanizeIdSegment(id: string): string {
         .join(' ');
 }
 
-function barColor(pct: number): string {
-    if (pct >= 85) {
+function barColor(pct: number, warning = 70, critical = 85): string {
+    if (pct >= critical) {
         return 'bg-red-500';
     }
 
-    if (pct >= 70) {
+    if (pct >= warning) {
         return 'bg-amber-500';
     }
 
     return 'bg-blue-500';
 }
 
-export default function Index() {
+interface FilesystemUsage {
+    key: string;
+    path: string;
+    usedKb: number | null;
+    totalKb: number | null;
+    pct: number | null;
+}
+
+// The raw appliance metrics report every mount point as three separate
+// entries (used/totalsize/util in KB or %), which reads as ~60 disconnected
+// rows for a ~17-filesystem appliance. Pairing them by mount point into one
+// row each — with the percentage computed from used/total directly rather
+// than trusting the (sometimes mislabeled) reported "util" field — is what
+// actually makes this section readable. Directory-level DB sub-accounting
+// (vcdb_events, vcdb_stats, ...) is intentionally left out: it's internal
+// detail already summarized by the "Database Storage" health badge above.
+function buildFilesystemUsage(metrics: ApplianceMetric[]): FilesystemUsage[] {
+    const byKey = new Map<
+        string,
+        {
+            used?: number;
+            total?: number;
+            util?: number;
+            instance: string | null;
+        }
+    >();
+
+    metrics.forEach((metric) => {
+        const match = metric.id.match(
+            /^storage\.(used|totalsize|util)\.filesystem\.(.+)$/,
+        );
+
+        if (!match || metric.value === null) {
+            return;
+        }
+
+        const [, field, key] = match;
+        const entry = byKey.get(key) ?? { instance: metric.instance };
+
+        if (field === 'used') {
+            entry.used = metric.value;
+        } else if (field === 'totalsize') {
+            entry.total = metric.value;
+        } else {
+            entry.util = metric.value;
+        }
+
+        entry.instance ??= metric.instance;
+        byKey.set(key, entry);
+    });
+
+    return Array.from(byKey.entries())
+        .map(([key, entry]) => {
+            const pct =
+                entry.used !== undefined &&
+                entry.total !== undefined &&
+                entry.total > 0
+                    ? Math.min(100, (entry.used / entry.total) * 100)
+                    : (entry.util ?? null);
+
+            return {
+                key,
+                path: entry.instance ?? humanizeIdSegment(key),
+                usedKb: entry.used ?? null,
+                totalKb: entry.total ?? null,
+                pct: pct !== null ? Math.round(pct * 10) / 10 : null,
+            };
+        })
+        .sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1));
+}
+
+interface Thresholds {
+    cpu_warning_pct: number;
+    cpu_critical_pct: number;
+    mem_warning_pct: number;
+    mem_critical_pct: number;
+}
+
+// Only CPU and Memory have admin-configurable thresholds (Settings →
+// Monitoring); Swap keeps the app-wide 70/85 default.
+function thresholdsForGroup(groupKey: string, thresholds: Thresholds) {
+    if (groupKey === 'cpu') {
+        return {
+            warning: thresholds.cpu_warning_pct,
+            critical: thresholds.cpu_critical_pct,
+        };
+    }
+
+    if (groupKey === 'mem') {
+        return {
+            warning: thresholds.mem_warning_pct,
+            critical: thresholds.mem_critical_pct,
+        };
+    }
+
+    return { warning: 70, critical: 85 };
+}
+
+export default function Index({ thresholds }: { thresholds: Thresholds }) {
     const [overview, setOverview] = useState<ApplianceOverview | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -253,9 +355,7 @@ export default function Index() {
             })
             .catch(() => {
                 if (!cancelled) {
-                    setError(
-                        'ไม่สามารถโหลดข้อมูล Appliance จาก vCenter ได้',
-                    );
+                    setError('ไม่สามารถโหลดข้อมูล Appliance จาก vCenter ได้');
                 }
             })
             .finally(() => {
@@ -288,6 +388,11 @@ export default function Index() {
         [overview],
     );
 
+    const filesystems = useMemo(
+        () => buildFilesystemUsage(overview?.metrics ?? []),
+        [overview],
+    );
+
     return (
         <>
             <Head title="Appliance Health" />
@@ -298,8 +403,8 @@ export default function Index() {
                             vCenter Appliance Health
                         </h1>
                         <p className="text-sm text-muted-foreground">
-                            Live status and resource utilization of the
-                            vCenter Server Appliance itself.
+                            Live status and resource utilization of the vCenter
+                            Server Appliance itself.
                         </p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -337,14 +442,17 @@ export default function Index() {
                 )}
 
                 {loading && !overview ? (
-                    <div className="grid gap-4 md:grid-cols-3">
-                        {Array.from({ length: 3 }).map((_, i) => (
-                            <Card key={i}>
-                                <CardContent className="pt-6">
-                                    <div className="h-16 animate-pulse rounded bg-muted" />
-                                </CardContent>
-                            </Card>
-                        ))}
+                    <div className="space-y-4">
+                        <div className="h-20 animate-pulse rounded-xl bg-muted" />
+                        <div className="h-40 animate-pulse rounded-xl bg-muted" />
+                        <div className="grid gap-4 lg:grid-cols-3">
+                            {Array.from({ length: 3 }).map((_, i) => (
+                                <div
+                                    key={i}
+                                    className="h-32 animate-pulse rounded-xl bg-muted"
+                                />
+                            ))}
+                        </div>
                     </div>
                 ) : (
                     overview && (
@@ -385,7 +493,7 @@ export default function Index() {
                                 <CardContent>
                                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                                         {HEALTH_COMPONENTS.map(
-                                            ({ key, label }) => {
+                                            ({ key, label, icon: Icon }) => {
                                                 const style = healthStyle(
                                                     overview.health[key],
                                                 );
@@ -396,16 +504,17 @@ export default function Index() {
                                                         className="flex items-center justify-between rounded-lg border p-3"
                                                     >
                                                         <div className="flex items-center gap-2">
-                                                            <span
-                                                                className={`h-2 w-2 rounded-full ${style.dot}`}
-                                                            />
+                                                            <Icon className="h-4 w-4 text-muted-foreground" />
                                                             <span className="text-sm font-medium">
                                                                 {label}
                                                             </span>
                                                         </div>
                                                         <span
-                                                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${style.badge}`}
+                                                            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${style.badge}`}
                                                         >
+                                                            <span
+                                                                className={`h-1.5 w-1.5 rounded-full ${style.dot}`}
+                                                            />
                                                             {style.label}
                                                         </span>
                                                     </div>
@@ -416,7 +525,7 @@ export default function Index() {
                                 </CardContent>
                             </Card>
 
-                            <div className="grid gap-4 lg:grid-cols-2">
+                            <div className="grid gap-4 lg:grid-cols-3">
                                 {metricGroups.map((group) => (
                                     <Card key={group.key}>
                                         <CardHeader className="flex flex-row items-center gap-2 space-y-0">
@@ -433,8 +542,14 @@ export default function Index() {
                                                     ไม่มีข้อมูล
                                                 </p>
                                             ) : (
-                                                group.metrics.map(
-                                                    (metric) => (
+                                                group.metrics.map((metric) => {
+                                                    const groupThresholds =
+                                                        thresholdsForGroup(
+                                                            group.key,
+                                                            thresholds,
+                                                        );
+
+                                                    return (
                                                         <div key={metric.id}>
                                                             <div className="mb-1 flex items-center justify-between text-xs">
                                                                 <span className="font-medium">
@@ -448,7 +563,6 @@ export default function Index() {
                                                                             {
                                                                                 metric.instance
                                                                             }
-
                                                                             )
                                                                         </span>
                                                                     )}
@@ -466,7 +580,7 @@ export default function Index() {
                                                                     null && (
                                                                     <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                                                                         <div
-                                                                            className={`h-full rounded-full ${barColor(metric.value)}`}
+                                                                            className={`h-full rounded-full ${barColor(metric.value, groupThresholds.warning, groupThresholds.critical)}`}
                                                                             style={{
                                                                                 width: `${Math.min(100, Math.max(0, metric.value))}%`,
                                                                             }}
@@ -474,13 +588,78 @@ export default function Index() {
                                                                     </div>
                                                                 )}
                                                         </div>
-                                                    ),
-                                                )
+                                                    );
+                                                })
                                             )}
                                         </CardContent>
                                     </Card>
                                 ))}
                             </div>
+
+                            <Card>
+                                <CardHeader className="flex flex-row items-center gap-2 space-y-0">
+                                    <div className="rounded-lg bg-blue-100 p-2 dark:bg-blue-900/30">
+                                        <HardDrive className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                                    </div>
+                                    <CardTitle className="text-base">
+                                        Storage
+                                        <span className="ml-2 text-sm font-normal text-muted-foreground">
+                                            {filesystems.length} filesystem
+                                            {filesystems.length !== 1
+                                                ? 's'
+                                                : ''}
+                                        </span>
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    {filesystems.length === 0 ? (
+                                        <p className="text-sm text-muted-foreground">
+                                            ไม่มีข้อมูล
+                                        </p>
+                                    ) : (
+                                        <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                                            {filesystems.map((fs) => (
+                                                <div key={fs.key}>
+                                                    <div className="mb-1 flex items-center justify-between text-xs">
+                                                        <span
+                                                            className="truncate font-medium"
+                                                            title={fs.path}
+                                                        >
+                                                            {fs.path}
+                                                        </span>
+                                                        <span className="shrink-0 text-muted-foreground">
+                                                            {fs.usedKb !==
+                                                                null &&
+                                                            fs.totalKb !== null
+                                                                ? `${formatBytesFromKb(fs.usedKb)} / ${formatBytesFromKb(fs.totalKb)}`
+                                                                : fs.totalKb !==
+                                                                    null
+                                                                  ? formatBytesFromKb(
+                                                                        fs.totalKb,
+                                                                    )
+                                                                  : ''}
+                                                            {fs.pct !==
+                                                                null && (
+                                                                <span className="ml-1.5 font-semibold text-foreground">
+                                                                    {fs.pct}%
+                                                                </span>
+                                                            )}
+                                                        </span>
+                                                    </div>
+                                                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                                                        <div
+                                                            className={`h-full rounded-full ${barColor(fs.pct ?? 0)}`}
+                                                            style={{
+                                                                width: `${Math.min(100, Math.max(0, fs.pct ?? 0))}%`,
+                                                            }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
                         </>
                     )
                 )}

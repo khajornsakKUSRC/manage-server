@@ -4,21 +4,34 @@ use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/login')->name('home');
 
+use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\AlarmController;
 use App\Http\Controllers\ApplianceController;
 use App\Http\Controllers\DailyReportController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatastoreController;
+use App\Http\Controllers\EnvironmentController;
 use App\Http\Controllers\ModSecurityController;
 use App\Http\Controllers\HostController;
+use App\Http\Controllers\PerformanceController;
+use App\Http\Controllers\SystemSettingController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\VmController;
 use App\Http\Controllers\VsphereController;
+
+// Where the server room's (not-yet-installed) temperature/humidity sensor
+// pushes readings — a device has no user session, so this sits outside the
+// auth group entirely and is instead gated by a shared-secret token inside
+// EnvironmentController::ingest() itself.
+Route::post('api/environment/readings', [EnvironmentController::class, 'ingest'])
+    ->middleware('throttle:60,1')
+    ->name('environment.ingest');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('page:dashboard')->group(function () {
         Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
         Route::get('dashboard/ping/{host}', [DashboardController::class, 'ping'])->name('dashboard.ping');
+        Route::get('api/environment/latest', [EnvironmentController::class, 'latest'])->name('environment.latest');
     });
 
     Route::middleware('page:hosts')->group(function () {
@@ -27,6 +40,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::middleware('page:vms')->group(function () {
         Route::post('vms/sync', [VmController::class, 'sync'])->name('vms.sync');
+        Route::get('api/vms/certificate-candidates', [VmController::class, 'certificateExpCandidates'])->name('vms.certificate-candidates');
+        Route::post('vms/certificate-exp', [VmController::class, 'bulkCertificateExp'])->name('vms.certificate-exp');
         Route::resource('vms', VmController::class)->except(['create', 'store']);
     });
 
@@ -52,15 +67,26 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('api/vsphere/datastores/trends', [VsphereController::class, 'datastoreTrends'])->name('vsphere.datastores.trends');
     });
 
+    Route::middleware('page:performance')->group(function () {
+        Route::get('performance', [PerformanceController::class, 'index'])->name('performance.index');
+        Route::get('api/vsphere/performance/entities', [VsphereController::class, 'performanceEntities'])->name('vsphere.performance.entities');
+        Route::get('api/vsphere/performance/metrics', [VsphereController::class, 'performanceMetrics'])->name('vsphere.performance.metrics');
+    });
+
     Route::middleware('page:modsecurity')->group(function () {
         Route::get('modsecurity', [ModSecurityController::class, 'index'])->name('modsecurity.index');
         Route::get('api/modsecurity/logs', [ModSecurityController::class, 'logs'])->name('modsecurity.logs');
     });
 
-    // User management is itself a privileged action — granting access to
-    // everything else — so it's admin-only rather than a grantable page.
+    // User management and the Activity Log (every user's actions + IPs) are
+    // themselves privileged/audit surfaces, so both are admin-only rather
+    // than grantable pages.
     Route::middleware('admin')->group(function () {
+        Route::get('users/online-status', [UserController::class, 'onlineStatus'])->name('users.online-status');
         Route::resource('users', UserController::class)->except(['show']);
+        Route::get('activity-log', [ActivityLogController::class, 'index'])->name('activity-log.index');
+        Route::get('system-settings', [SystemSettingController::class, 'index'])->name('system-settings.index');
+        Route::post('system-settings', [SystemSettingController::class, 'update'])->name('system-settings.update');
     });
 
     Route::middleware('page:hosts,dashboard')->group(function () {

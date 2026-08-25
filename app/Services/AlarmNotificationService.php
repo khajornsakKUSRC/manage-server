@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\AlarmNotification;
+use Carbon\Carbon;
+use Throwable;
 
 class AlarmNotificationService
 {
@@ -61,7 +63,63 @@ class AlarmNotificationService
             }
         }
 
-        AlarmNotification::whereNotIn('alarm_key', $currentKeys)->delete();
+        // Scoped to exclude "vm_down:" keys (see checkDownVmsAndNotify) —
+        // both methods share this table, and an unscoped delete here would
+        // wipe the other's notified state too, causing it to re-notify on
+        // every run instead of only on genuinely new events.
+        AlarmNotification::where('alarm_key', 'not like', 'vm_down:%')
+            ->whereNotIn('alarm_key', $currentKeys)
+            ->delete();
+
+        return $sent;
+    }
+
+    /**
+     * Pulls every Active VM that's currently down/powered-off and sends a
+     * Telegram message for each one not already notified. A VM that comes
+     * back up is dropped from the notified set, so it alerts again if it
+     * goes back down later. Returns the number of Telegram notifications
+     * sent.
+     */
+    public function checkDownVmsAndNotify(): int
+    {
+        $downVms = $this->alarmService->downVms();
+
+        $currentKeys = [];
+        $sent = 0;
+
+        foreach ($downVms as $vm) {
+            $key = $this->downVmKey($vm['name']);
+            $currentKeys[] = $key;
+
+            if (AlarmNotification::where('alarm_key', $key)->exists()) {
+                continue;
+            }
+
+            $sentOk = $this->telegram->sendMessage(
+                config('services.telegram.bot_token'),
+                config('services.telegram.chat_id'),
+                $this->formatDownVmMessage($vm),
+            );
+
+            if (! $sentOk) {
+                continue;
+            }
+
+            AlarmNotification::create([
+                'alarm_key' => $key,
+                'object_type' => 'VM',
+                'object_name' => $vm['name'],
+                'alarm_name' => 'VM Down',
+                'notified_at' => now(),
+            ]);
+
+            $sent++;
+        }
+
+        AlarmNotification::where('alarm_key', 'like', 'vm_down:%')
+            ->whereNotIn('alarm_key', $currentKeys)
+            ->delete();
 
         return $sent;
     }
@@ -69,6 +127,11 @@ class AlarmNotificationService
     protected function alarmKey(string $type, string $name, string $alarmName): string
     {
         return md5("{$type}|{$name}|{$alarmName}");
+    }
+
+    protected function downVmKey(string $name): string
+    {
+        return 'vm_down:'.md5($name);
     }
 
     protected function formatMessage(array $object, array $alarm): string
@@ -93,10 +156,36 @@ class AlarmNotificationService
         $lines[] = 'Severity: '.$this->escape($alarm['status']);
 
         if (! empty($alarm['time'])) {
-            $lines[] = 'Time: '.$this->escape($alarm['time']);
+            $lines[] = 'Time: '.$this->formatAlarmTime($alarm['time']);
         }
 
         return implode("\n", $lines);
+    }
+
+    protected function formatDownVmMessage(array $vm): string
+    {
+        $status = $vm['power_state'] ?? 'Not found in vCenter';
+
+        return implode("\n", [
+            '🔴 <b>VM Down</b>',
+            'VM: <b>'.$this->escape($vm['name']).'</b>',
+            'Status: '.$this->escape($status),
+            'Time: '.now()->toDateTimeString(),
+        ]);
+    }
+
+    /**
+     * vCenter reports alarm trigger times as UTC (e.g. "2026-08-24T03:15:00Z")
+     * via the SOAP API — converted to the app's Thailand timezone here so the
+     * Telegram message reads in local time instead of UTC.
+     */
+    protected function formatAlarmTime(string $time): string
+    {
+        try {
+            return Carbon::parse($time)->setTimezone(config('app.timezone'))->toDateTimeString();
+        } catch (Throwable) {
+            return $this->escape($time);
+        }
     }
 
     protected function escape(string $value): string

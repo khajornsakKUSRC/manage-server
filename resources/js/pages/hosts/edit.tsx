@@ -1,4 +1,5 @@
 import { Head, Link, useForm } from '@inertiajs/react';
+import { Server } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -36,7 +37,10 @@ export default function Edit({ host }: { host: any }) {
 
                 <Card>
                     <form onSubmit={submit}>
-                        <CardHeader>
+                        <CardHeader className="flex flex-row items-center gap-2 space-y-0">
+                            <div className="rounded-lg bg-violet-100 p-2 dark:bg-violet-900/30">
+                                <Server className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+                            </div>
                             <CardTitle>Host Details</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">

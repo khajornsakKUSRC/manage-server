@@ -1,6 +1,14 @@
 import type { RequestPayload } from '@inertiajs/core';
 import { Head, router, usePage } from '@inertiajs/react';
-import { Cloud, FileDown, Plus, Save, Trash2 } from 'lucide-react';
+import {
+    ClipboardList,
+    Cloud,
+    FileDown,
+    Plus,
+    Save,
+    Server,
+    Trash2,
+} from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -315,10 +323,7 @@ function ReportForm({
         return Array.from(names);
     }, [rows, incidents]);
 
-    const updateIncident = (
-        index: number,
-        patch: Partial<IncidentForm>,
-    ) => {
+    const updateIncident = (index: number, patch: Partial<IncidentForm>) => {
         setIncidents((prev) =>
             prev.map((entry, i) =>
                 i === index ? { ...entry, ...patch } : entry,
@@ -417,15 +422,20 @@ function ReportForm({
         <>
             <Card className="flex min-h-0 flex-1 flex-col">
                 <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
-                    <CardTitle>
-                        ข้อมูลอัตโนมัติจาก vCenter
-                        {rows.length > 0 && (
-                            <span className="ml-2 text-sm font-normal text-muted-foreground">
-                                {rows.length} เครื่อง — UP {up} / DOWN{' '}
-                                {rows.length - up}
-                            </span>
-                        )}
-                    </CardTitle>
+                    <div className="flex items-center gap-2">
+                        <div className="rounded-lg bg-green-100 p-2 dark:bg-green-900/30">
+                            <Server className="h-4 w-4 text-green-600 dark:text-green-400" />
+                        </div>
+                        <CardTitle>
+                            ข้อมูลอัตโนมัติจาก vCenter
+                            {rows.length > 0 && (
+                                <span className="ml-2 text-sm font-normal text-muted-foreground">
+                                    {rows.length} เครื่อง — UP {up} / DOWN{' '}
+                                    {rows.length - up}
+                                </span>
+                            )}
+                        </CardTitle>
+                    </div>
                     <Button size="sm" onClick={handlePull} disabled={pulling}>
                         <Cloud
                             className={`mr-2 h-4 w-4 ${pulling ? 'animate-pulse' : ''}`}
@@ -544,7 +554,10 @@ function ReportForm({
             </Card>
 
             <Card>
-                <CardHeader>
+                <CardHeader className="flex flex-row items-center gap-2 space-y-0">
+                    <div className="rounded-lg bg-amber-100 p-2 dark:bg-amber-900/30">
+                        <ClipboardList className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                    </div>
                     <CardTitle>บันทึกเหตุการณ์ประจำวัน</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -571,10 +584,7 @@ function ReportForm({
                                             ไม่ระบุ
                                         </SelectItem>
                                         {vmOptions.map((name) => (
-                                            <SelectItem
-                                                key={name}
-                                                value={name}
-                                            >
+                                            <SelectItem key={name} value={name}>
                                                 {name}
                                             </SelectItem>
                                         ))}
@@ -673,7 +683,11 @@ function ReportForm({
                         </div>
                     ))}
 
-                    <Button type="button" variant="outline" onClick={addIncident}>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        onClick={addIncident}
+                    >
                         <Plus className="mr-2 h-4 w-4" />
                         เพิ่มรายการ
                     </Button>

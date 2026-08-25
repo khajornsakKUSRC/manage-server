@@ -2,7 +2,9 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\SystemSetting;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -35,6 +37,8 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        $settings = SystemSetting::current();
+
         return [
             ...parent::share($request),
             'name' => config('app.name'),
@@ -42,6 +46,17 @@ class HandleInertiaRequests extends Middleware
                 'user' => $request->user(),
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+            // Shared on every page — including the (unauthenticated) login
+            // page, so the maintenance notice and footer can show there too.
+            'siteSettings' => [
+                'maintenance_enabled' => $settings->maintenance_mode_enabled,
+                'maintenance_message' => $settings->maintenance_message,
+                'footer_text' => $settings->footer_text,
+                'favicon_url' => $settings->favicon_path
+                    ? Storage::disk('public')->url($settings->favicon_path)
+                    : null,
+                'disabled_pages' => $settings->disabled_pages ?? [],
+            ],
         ];
     }
 }

@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use App\Concerns\PasswordValidationRules;
 use App\Concerns\ProfileValidationRules;
 use App\Models\User;
+use App\Services\ActivityLogger;
 use App\Support\Permissions;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -21,9 +23,31 @@ class UserController extends Controller
     public function index(): Response
     {
         return Inertia::render('users/index', [
-            'users' => User::orderBy('name')->get(['id', 'name', 'email', 'is_admin', 'permissions', 'created_at']),
+            'users' => User::orderBy('name')
+                ->get(['id', 'name', 'email', 'is_admin', 'permissions', 'created_at', 'last_seen_at'])
+                ->map(fn (User $user) => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'is_admin' => $user->is_admin,
+                    'permissions' => $user->permissions,
+                    'created_at' => $user->created_at,
+                    'is_online' => $user->isOnline(),
+                ]),
             'pages' => Permissions::PAGES,
             'currentUserId' => Auth::id(),
+        ]);
+    }
+
+    /**
+     * Currently-online user ids, polled by the Manage Users page to keep
+     * the online/offline column live without a full page reload.
+     */
+    public function onlineStatus(): JsonResponse
+    {
+        return response()->json([
+            'online_ids' => User::where('last_seen_at', '>=', now()->subSeconds(User::ONLINE_THRESHOLD_SECONDS))
+                ->pluck('id'),
         ]);
     }
 
@@ -34,7 +58,7 @@ class UserController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request, ActivityLogger $activityLogger): RedirectResponse
     {
         $validated = $request->validate([
             ...$this->profileRules(),
@@ -44,13 +68,20 @@ class UserController extends Controller
             'permissions.*' => [Rule::in(Permissions::keys())],
         ]);
 
-        User::create([
+        $user = User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
             'password' => $validated['password'],
             'is_admin' => $validated['is_admin'] ?? false,
             'permissions' => $validated['permissions'] ?? [],
         ]);
+
+        $activityLogger->record(
+            action: 'created',
+            description: "Created user '{$user->email}'",
+            subjectType: 'user',
+            subjectLabel: $user->email,
+        );
 
         return redirect()->route('users.index')->with('success', 'User created successfully.');
     }
@@ -64,7 +95,7 @@ class UserController extends Controller
         ]);
     }
 
-    public function update(Request $request, User $user): RedirectResponse
+    public function update(Request $request, User $user, ActivityLogger $activityLogger): RedirectResponse
     {
         $validated = $request->validate([
             ...$this->profileRules($user->id),
@@ -92,16 +123,32 @@ class UserController extends Controller
 
         $user->save();
 
+        $activityLogger->record(
+            action: 'updated',
+            description: "Updated user '{$user->email}'",
+            subjectType: 'user',
+            subjectLabel: $user->email,
+        );
+
         return redirect()->route('users.index')->with('success', 'User updated successfully.');
     }
 
-    public function destroy(User $user): RedirectResponse
+    public function destroy(User $user, ActivityLogger $activityLogger): RedirectResponse
     {
         if ($user->id === Auth::id()) {
             return back()->withErrors(['user' => 'You cannot delete your own account.']);
         }
 
+        $email = $user->email;
+
         $user->delete();
+
+        $activityLogger->record(
+            action: 'deleted',
+            description: "Deleted user '{$email}'",
+            subjectType: 'user',
+            subjectLabel: $email,
+        );
 
         return redirect()->route('users.index')->with('success', 'User deleted successfully.');
     }

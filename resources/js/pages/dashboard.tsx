@@ -4,14 +4,19 @@ import {
     Monitor,
     RefreshCw,
     AlertCircle,
+    Droplets,
     HardDrive,
     Power,
     PowerOff,
+    Thermometer,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { useAppearance } from '@/hooks/use-appearance';
 import { dashboard } from '@/routes';
 
 interface VsphereVm {
@@ -59,6 +64,211 @@ function formatBytes(bytes: number): string {
     return `${gb.toFixed(1)} GB`;
 }
 
+interface EnvironmentReading {
+    temperature_c: number | null;
+    humidity_pct: number | null;
+    recorded_at: string | null;
+}
+
+interface EnvironmentThresholds {
+    room_temp_min_c: number;
+    room_temp_max_c: number;
+    room_humidity_min_pct: number;
+    room_humidity_max_pct: number;
+}
+
+interface EnvironmentPayload {
+    reading: EnvironmentReading | null;
+    stale: boolean;
+    thresholds: EnvironmentThresholds;
+}
+
+type ClimateStatus = 'unknown' | 'stale' | 'normal' | 'abnormal';
+
+// No server room sensor is wired up yet (see EnvironmentController) — a
+// null value always reads as "unknown" regardless of the configured range,
+// rather than falling outside the range and being flagged as abnormal.
+function climateStatus(
+    value: number | null,
+    min: number,
+    max: number,
+    stale: boolean,
+): ClimateStatus {
+    if (value === null) {
+        return 'unknown';
+    }
+
+    if (stale) {
+        return 'stale';
+    }
+
+    return value >= min && value <= max ? 'normal' : 'abnormal';
+}
+
+const GAUGE_COLORS: Record<ClimateStatus, { light: string; dark: string }> = {
+    normal: { light: '#16a34a', dark: '#4ade80' },
+    abnormal: { light: '#dc2626', dark: '#f87171' },
+    stale: { light: '#d97706', dark: '#fbbf24' },
+    unknown: { light: '#cbd5e1', dark: '#3f3f46' },
+};
+
+const GAUGE_TRACK_COLOR = { light: '#e5e7eb', dark: '#27272a' };
+
+function StatusBadge({ status }: { status: ClimateStatus }) {
+    if (status === 'normal') {
+        return (
+            <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                Normal
+            </Badge>
+        );
+    }
+
+    if (status === 'abnormal') {
+        return (
+            <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                Abnormal
+            </Badge>
+        );
+    }
+
+    if (status === 'stale') {
+        return (
+            <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                Sensor Offline
+            </Badge>
+        );
+    }
+
+    return (
+        <Badge className="bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+            No Data
+        </Badge>
+    );
+}
+
+// A half-donut (180°→0°) gauge built from a two-slice Pie: the value slice
+// (colored by status) plus a "rest" slice filling out to `max` (the track
+// color) — recharts has no dedicated gauge primitive, this is the standard
+// way to get one out of PieChart.
+function HalfGauge({
+    value,
+    max,
+    color,
+    trackColor,
+}: {
+    value: number;
+    max: number;
+    color: string;
+    trackColor: string;
+}) {
+    const clamped = Math.min(Math.max(value, 0), max);
+    const data = [
+        { key: 'value', amount: clamped },
+        { key: 'rest', amount: max - clamped },
+    ];
+
+    return (
+        <ResponsiveContainer width="100%" height="100%">
+            <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+                <Pie
+                    data={data}
+                    dataKey="amount"
+                    cx="50%"
+                    cy="95%"
+                    startAngle={180}
+                    endAngle={0}
+                    innerRadius="72%"
+                    outerRadius="100%"
+                    stroke="none"
+                    isAnimationActive={false}
+                >
+                    <Cell fill={color} />
+                    <Cell fill={trackColor} />
+                </Pie>
+            </PieChart>
+        </ResponsiveContainer>
+    );
+}
+
+function EnvironmentGaugeCard({
+    icon: Icon,
+    title,
+    value,
+    unit,
+    decimals,
+    gaugeMax,
+    rangeMin,
+    rangeMax,
+    stale,
+    recordedAt,
+    loading,
+}: {
+    icon: typeof Thermometer;
+    title: string;
+    value: number | null;
+    unit: string;
+    decimals: number;
+    gaugeMax: number;
+    rangeMin: number;
+    rangeMax: number;
+    stale: boolean;
+    recordedAt: string | null;
+    loading: boolean;
+}) {
+    const { resolvedAppearance } = useAppearance();
+    const status = climateStatus(value, rangeMin, rangeMax, stale);
+    const color = GAUGE_COLORS[status][resolvedAppearance];
+    const trackColor = GAUGE_TRACK_COLOR[resolvedAppearance];
+
+    return (
+        <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm font-medium">
+                    <Icon className="h-4 w-4 text-muted-foreground" />
+                    {title}
+                </CardTitle>
+                {!loading && <StatusBadge status={status} />}
+            </CardHeader>
+            <CardContent>
+                {loading ? (
+                    <div className="h-32 animate-pulse rounded bg-muted" />
+                ) : (
+                    <>
+                        <div className="relative mx-auto h-28 w-full max-w-[240px]">
+                            <HalfGauge
+                                value={value ?? 0}
+                                max={gaugeMax}
+                                color={color}
+                                trackColor={trackColor}
+                            />
+                            <div className="pointer-events-none absolute inset-x-0 bottom-1 flex flex-col items-center">
+                                <span className="text-3xl font-bold">
+                                    {value !== null
+                                        ? `${value.toFixed(decimals)}${unit}`
+                                        : '--'}
+                                </span>
+                            </div>
+                        </div>
+                        <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                            <span>
+                                Normal: {rangeMin}–{rangeMax}
+                                {unit}
+                            </span>
+                            <span>
+                                {recordedAt
+                                    ? new Date(recordedAt).toLocaleTimeString()
+                                    : 'Sensor not connected'}
+                            </span>
+                        </div>
+                    </>
+                )}
+            </CardContent>
+        </Card>
+    );
+}
+
+const ENVIRONMENT_POLL_MS = 30_000;
+
 export default function Dashboard() {
     const [vsphere, setVsphere] = useState<VsphereData | null>(null);
     const [vsphereLoading, setVsphereLoading] = useState(true);
@@ -67,6 +277,42 @@ export default function Dashboard() {
         null,
     );
     const [vmSearch, setVmSearch] = useState('');
+
+    const [environment, setEnvironment] = useState<EnvironmentPayload | null>(
+        null,
+    );
+    const [environmentLoading, setEnvironmentLoading] = useState(true);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const load = () => {
+            fetch('/api/environment/latest')
+                .then((res) => (res.ok ? res.json() : Promise.reject()))
+                .then((json) => {
+                    if (!cancelled) {
+                        setEnvironment(json.data ?? null);
+                    }
+                })
+                .catch(() => {
+                    // Silently ignore — the cards just keep showing the last
+                    // known reading (or "No Data" if there's never been one).
+                })
+                .finally(() => {
+                    if (!cancelled) {
+                        setEnvironmentLoading(false);
+                    }
+                });
+        };
+
+        load();
+        const interval = setInterval(load, ENVIRONMENT_POLL_MS);
+
+        return () => {
+            cancelled = true;
+            clearInterval(interval);
+        };
+    }, []);
 
     const fetchVsphereData = useCallback(async (): Promise<VsphereData> => {
         const responses = await Promise.all([
@@ -169,6 +415,39 @@ export default function Dashboard() {
         <>
             <Head title="Dashboard" />
             <div className="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
+                <div className="mb-4 grid gap-4 sm:grid-cols-2">
+                    <EnvironmentGaugeCard
+                        icon={Thermometer}
+                        title="Server Room Temperature"
+                        value={environment?.reading?.temperature_c ?? null}
+                        unit="°C"
+                        decimals={1}
+                        gaugeMax={50}
+                        rangeMin={environment?.thresholds.room_temp_min_c ?? 18}
+                        rangeMax={environment?.thresholds.room_temp_max_c ?? 27}
+                        stale={environment?.stale ?? false}
+                        recordedAt={environment?.reading?.recorded_at ?? null}
+                        loading={environmentLoading && !environment}
+                    />
+                    <EnvironmentGaugeCard
+                        icon={Droplets}
+                        title="Server Room Humidity"
+                        value={environment?.reading?.humidity_pct ?? null}
+                        unit="%"
+                        decimals={0}
+                        gaugeMax={100}
+                        rangeMin={
+                            environment?.thresholds.room_humidity_min_pct ?? 40
+                        }
+                        rangeMax={
+                            environment?.thresholds.room_humidity_max_pct ?? 60
+                        }
+                        stale={environment?.stale ?? false}
+                        recordedAt={environment?.reading?.recorded_at ?? null}
+                        loading={environmentLoading && !environment}
+                    />
+                </div>
+
                 <div>
                     <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">

@@ -1,4 +1,5 @@
-import { Form, Head } from '@inertiajs/react';
+import { Form, Head, usePage } from '@inertiajs/react';
+import { useEffect } from 'react';
 import InputError from '@/components/input-error';
 import PasskeyVerify from '@/components/passkey-verify';
 import PasswordInput from '@/components/password-input';
@@ -8,6 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { alertMaintenance } from '@/lib/swal';
 import { store } from '@/routes/login';
 import { request } from '@/routes/password';
 
@@ -17,6 +19,18 @@ type Props = {
 };
 
 export default function Login({ status, canResetPassword }: Props) {
+    const { siteSettings } = usePage().props;
+
+    useEffect(() => {
+        if (
+            siteSettings?.maintenance_enabled &&
+            siteSettings.maintenance_message
+        ) {
+            alertMaintenance(siteSettings.maintenance_message);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     return (
         <>
             <Head title="Log in" />

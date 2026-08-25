@@ -61,4 +61,12 @@ return [
         'chat_id' => env('TELEGRAM_DAILY_REPORT_CHAT_ID'),
     ],
 
+    // Shared secret the (not-yet-installed) server room temperature/
+    // humidity sensor sends back on each reading it pushes — see
+    // EnvironmentController::ingest(). Unset until a device exists, in
+    // which case every ingest request is rejected.
+    'environment_sensor' => [
+        'token' => env('ENVIRONMENT_SENSOR_TOKEN'),
+    ],
+
 ];

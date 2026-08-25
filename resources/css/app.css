@@ -62,25 +62,30 @@
 }
 
 :root {
-    --background: oklch(1 0 0);
+    /* A faint cool tint (not pure white) behind pure-white cards — gives
+       the border/shadow something to read against instead of white-on-white,
+       which was the biggest single contributor to the old "flat" look. */
+    --background: oklch(0.97 0.006 260);
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
     --card-foreground: oklch(0.145 0 0);
     --popover: oklch(1 0 0);
     --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
+    /* Brand blue — was pure grayscale (chroma 0) before, which is why
+       every button, active nav item, and focus ring rendered black/gray. */
+    --primary: oklch(0.546 0.245 262.881);
     --primary-foreground: oklch(0.985 0 0);
     --secondary: oklch(0.97 0 0);
     --secondary-foreground: oklch(0.205 0 0);
     --muted: oklch(0.97 0 0);
     --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
+    --accent: oklch(0.94 0.03 262);
+    --accent-foreground: oklch(0.398 0.18 262);
     --destructive: oklch(0.577 0.245 27.325);
     --destructive-foreground: oklch(0.577 0.245 27.325);
     --border: oklch(0.922 0 0);
     --input: oklch(0.922 0 0);
-    --ring: oklch(0.87 0 0);
+    --ring: oklch(0.623 0.214 259.815);
     --chart-1: oklch(0.646 0.222 41.116);
     --chart-2: oklch(0.6 0.118 184.704);
     --chart-3: oklch(0.398 0.07 227.392);
@@ -89,47 +94,49 @@
     --radius: 0.625rem;
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
+    --sidebar-primary: oklch(0.546 0.245 262.881);
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
+    --sidebar-accent: oklch(0.94 0.03 262);
+    --sidebar-accent-foreground: oklch(0.398 0.18 262);
     --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.87 0 0);
+    --sidebar-ring: oklch(0.623 0.214 259.815);
 }
 
 .dark {
-    --background: oklch(0.145 0 0);
+    /* Same elevation idea as light mode, inverted: cards read a step
+       lighter than the page instead of blending into it. */
+    --background: oklch(0.13 0.004 260);
     --foreground: oklch(0.985 0 0);
-    --card: oklch(0.145 0 0);
+    --card: oklch(0.19 0.008 260);
     --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.145 0 0);
+    --popover: oklch(0.19 0.008 260);
     --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.985 0 0);
-    --primary-foreground: oklch(0.205 0 0);
+    --primary: oklch(0.623 0.214 259.815);
+    --primary-foreground: oklch(0.985 0 0);
     --secondary: oklch(0.269 0 0);
     --secondary-foreground: oklch(0.985 0 0);
     --muted: oklch(0.269 0 0);
     --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
+    --accent: oklch(0.3 0.06 262);
+    --accent-foreground: oklch(0.85 0.1 260);
     --destructive: oklch(0.396 0.141 25.723);
     --destructive-foreground: oklch(0.637 0.237 25.331);
     --border: oklch(0.269 0 0);
     --input: oklch(0.269 0 0);
-    --ring: oklch(0.439 0 0);
+    --ring: oklch(0.623 0.214 259.815);
     --chart-1: oklch(0.488 0.243 264.376);
     --chart-2: oklch(0.696 0.17 162.48);
     --chart-3: oklch(0.769 0.188 70.08);
     --chart-4: oklch(0.627 0.265 303.9);
     --chart-5: oklch(0.645 0.246 16.439);
-    --sidebar: oklch(0.205 0 0);
+    --sidebar: oklch(0.17 0.006 260);
     --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.623 0.214 259.815);
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.3 0.06 262);
+    --sidebar-accent-foreground: oklch(0.85 0.1 260);
     --sidebar-border: oklch(0.269 0 0);
-    --sidebar-ring: oklch(0.439 0 0);
+    --sidebar-ring: oklch(0.623 0.214 259.815);
 }
 
 @layer base {
@@ -139,5 +146,66 @@
 
     body {
         @apply bg-background text-foreground;
+    }
+}
+
+/* Global loading spinner — shown by <GlobalLoader> during Inertia page
+   visits (navigation, form submits) app-wide. */
+.loader {
+    width: 60px;
+    aspect-ratio: 1;
+    border: 15px solid #ddd;
+    border-radius: 50%;
+    position: relative;
+    transform: rotate(45deg);
+}
+.loader::before {
+    content: '';
+    position: absolute;
+    inset: -15px;
+    border-radius: 50%;
+    border: 15px solid #514b82;
+    animation: loader-spin 2s infinite linear;
+}
+/* Sidebar "Alarm Notification" badge — flashes briefly whenever the
+   triggered-alarm count goes up (see app-sidebar.tsx), like a new-message
+   notification, so a fresh alarm is noticeable even outside the Alarm page. */
+.animate-badge-flash {
+    animation: badge-flash 0.9s ease-in-out infinite;
+}
+@keyframes badge-flash {
+    0%,
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6);
+    }
+    50% {
+        transform: scale(1.25);
+        box-shadow: 0 0 0 5px rgba(239, 68, 68, 0);
+    }
+}
+
+@keyframes loader-spin {
+    0% {
+        clip-path: polygon(50% 50%, 0 0, 0 0, 0 0, 0 0, 0 0);
+    }
+    25% {
+        clip-path: polygon(50% 50%, 0 0, 100% 0, 100% 0, 100% 0, 100% 0);
+    }
+    50% {
+        clip-path: polygon(
+            50% 50%,
+            0 0,
+            100% 0,
+            100% 100%,
+            100% 100%,
+            100% 100%
+        );
+    }
+    75% {
+        clip-path: polygon(50% 50%, 0 0, 100% 0, 100% 100%, 0 100%, 0 100%);
+    }
+    100% {
+        clip-path: polygon(50% 50%, 0 0, 100% 0, 100% 100%, 0 100%, 0 0);
     }
 }

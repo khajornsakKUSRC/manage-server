@@ -5,8 +5,10 @@ namespace App\Http\Controllers;
 use App\Services\AlarmHintService;
 use App\Services\AlarmVsphereService;
 use App\Services\DatastoreTrendService;
+use App\Services\PerformanceVsphereService;
 use App\Services\VsphereService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Throwable;
 
 class VsphereController extends Controller
@@ -76,6 +78,29 @@ class VsphereController extends Controller
     public function datastoreTrends(DatastoreTrendService $trendService): JsonResponse
     {
         return $this->respond(fn () => $trendService->pull());
+    }
+
+    /**
+     * Every host and VM in vCenter, for the Performance page's entity
+     * picker.
+     */
+    public function performanceEntities(PerformanceVsphereService $performance): JsonResponse
+    {
+        return $this->respond(fn () => $performance->entities());
+    }
+
+    /**
+     * Real-time CPU/memory/disk/network series (last hour) for one host or
+     * VM, for the Performance page's charts.
+     */
+    public function performanceMetrics(Request $request, PerformanceVsphereService $performance): JsonResponse
+    {
+        $validated = $request->validate([
+            'id' => ['required', 'string'],
+            'type' => ['required', 'string', 'in:HostSystem,VirtualMachine'],
+        ]);
+
+        return $this->respond(fn () => $performance->pull($validated['id'], $validated['type']));
     }
 
     /**
