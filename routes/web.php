@@ -13,6 +13,7 @@ use App\Http\Controllers\DatastoreController;
 use App\Http\Controllers\EnvironmentController;
 use App\Http\Controllers\ModSecurityController;
 use App\Http\Controllers\HostController;
+use App\Http\Controllers\NetworkMonitorController;
 use App\Http\Controllers\PerformanceController;
 use App\Http\Controllers\SmartDetectionController;
 use App\Http\Controllers\SystemSettingController;
@@ -66,6 +67,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('page:datastores')->group(function () {
         Route::get('datastores', [DatastoreController::class, 'index'])->name('datastores.index');
         Route::get('api/vsphere/datastores/trends', [VsphereController::class, 'datastoreTrends'])->name('vsphere.datastores.trends');
+    });
+
+    Route::middleware('page:network-infrastructure')->group(function () {
+        Route::get('api/network-monitors/status', [NetworkMonitorController::class, 'status'])->name('network-monitors.status');
+        Route::resource('network-monitors', NetworkMonitorController::class)->except(['show']);
     });
 
     Route::middleware('page:performance')->group(function () {

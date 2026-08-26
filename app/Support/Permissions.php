@@ -18,6 +18,7 @@ final class Permissions
         'daily-reports' => 'Daily Report',
         'alarms' => 'Alarm Notification',
         'datastores' => 'Datastore',
+        'network-infrastructure' => 'Network Infrastructure',
         'performance' => 'Performance',
         'smart-detection' => 'Smart Detection',
         'modsecurity' => 'Mod Security',

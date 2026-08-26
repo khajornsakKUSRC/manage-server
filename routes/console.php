@@ -23,3 +23,14 @@ Schedule::command('alarms:notify-telegram')->everyFiveMinutes();
 // credential) to run Smart Detection's five checks, Telegram-notifying on
 // each new/reopened warning-or-critical finding.
 Schedule::command('smart-detection:scan')->everyFifteenMinutes();
+
+// Feeds the Network Infrastructure page's uptime heartbeats — runs every
+// minute (the scheduler's finest grain) but each monitor only actually gets
+// checked once its own interval_seconds has elapsed. withoutOverlapping()
+// guards against a run still checking slow HTTP/TCP targets when the next
+// minute ticks over.
+Schedule::command('network-monitors:check')->everyMinute()->withoutOverlapping();
+
+// Keeps network_monitor_checks from growing unbounded — the page only ever
+// shows the last hour, so a week of history is more than enough buffer.
+Schedule::command('network-monitors:prune')->dailyAt('00:10');

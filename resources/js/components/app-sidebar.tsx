@@ -6,6 +6,7 @@ import {
     History,
     LayoutGrid,
     LineChart,
+    Network,
     Radar,
     Server,
     Monitor,
@@ -77,6 +78,12 @@ const mainNavItems: PermissionedNavItem[] = [
         href: '/datastores',
         icon: Database,
         permission: 'datastores',
+    },
+    {
+        title: 'Network Infrastructure',
+        href: '/network-monitors',
+        icon: Network,
+        permission: 'network-infrastructure',
     },
     {
         title: 'Performance',
