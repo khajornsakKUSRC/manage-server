@@ -12,7 +12,19 @@ import {
     Thermometer,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts';
+import {
+    Bar,
+    BarChart,
+    CartesianGrid,
+    Cell,
+    LabelList,
+    Pie,
+    PieChart,
+    ResponsiveContainer,
+    Tooltip,
+    XAxis,
+    YAxis,
+} from 'recharts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -82,6 +94,24 @@ interface VsphereData {
     datastores: VsphereDatastore[];
 }
 
+interface TopCpuVm {
+    id: string;
+    name: string;
+    cpu_pct: number;
+}
+
+function cpuBarColor(pct: number): string {
+    if (pct >= 85) {
+        return '#dc2626';
+    }
+
+    if (pct >= 70) {
+        return '#d97706';
+    }
+
+    return '#2563eb';
+}
+
 function formatBytes(bytes: number): string {
     const gb = bytes / 1024 ** 3;
 
@@ -141,6 +171,9 @@ const GAUGE_COLORS: Record<ClimateStatus, { light: string; dark: string }> = {
 };
 
 const GAUGE_TRACK_COLOR = { light: '#e5e7eb', dark: '#27272a' };
+const GRID_COLOR = { light: '#e5e7eb', dark: '#27272a' };
+const AXIS_COLOR = { light: '#71717a', dark: '#a1a1aa' };
+const LABEL_COLOR = { light: '#18181b', dark: '#f4f4f5' };
 
 function StatusBadge({ status }: { status: ClimateStatus }) {
     if (status === 'normal') {
@@ -296,8 +329,15 @@ function EnvironmentGaugeCard({
 }
 
 const ENVIRONMENT_POLL_MS = 30_000;
+const TOP_CPU_POLL_MS = 20_000;
+// const TOP_CPU_POLL_MS = 5000;
 
 export default function Dashboard() {
+    const { resolvedAppearance } = useAppearance();
+    const gridColor = GRID_COLOR[resolvedAppearance];
+    const axisColor = AXIS_COLOR[resolvedAppearance];
+    const labelColor = LABEL_COLOR[resolvedAppearance];
+
     const [vsphere, setVsphere] = useState<VsphereData | null>(null);
     const [vsphereLoading, setVsphereLoading] = useState(true);
     const [vsphereError, setVsphereError] = useState<string | null>(null);
@@ -359,6 +399,43 @@ export default function Dashboard() {
 
         load();
         const interval = setInterval(load, ENVIRONMENT_POLL_MS);
+
+        return () => {
+            cancelled = true;
+            clearInterval(interval);
+        };
+    }, []);
+
+    const [topCpuVms, setTopCpuVms] = useState<TopCpuVm[] | null>(null);
+    const [topCpuLoading, setTopCpuLoading] = useState(true);
+    const [topCpuError, setTopCpuError] = useState(false);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const load = () => {
+            fetch('/api/vsphere/top-cpu-vms')
+                .then((res) => (res.ok ? res.json() : Promise.reject()))
+                .then((json) => {
+                    if (!cancelled) {
+                        setTopCpuVms(json.data ?? []);
+                        setTopCpuError(false);
+                    }
+                })
+                .catch(() => {
+                    if (!cancelled) {
+                        setTopCpuError(true);
+                    }
+                })
+                .finally(() => {
+                    if (!cancelled) {
+                        setTopCpuLoading(false);
+                    }
+                });
+        };
+
+        load();
+        const interval = setInterval(load, TOP_CPU_POLL_MS);
 
         return () => {
             cancelled = true;
@@ -706,12 +783,11 @@ export default function Dashboard() {
                                                                     </p>
                                                                 </div>
                                                                 <span
-                                                                    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                                                                        host.connection_state ===
+                                                                    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${host.connection_state ===
                                                                         'CONNECTED'
-                                                                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                                                                            : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                                                    }`}
+                                                                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                                                        : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                                                        }`}
                                                                 >
                                                                     {
                                                                         host.connection_state
@@ -734,7 +810,7 @@ export default function Dashboard() {
                                         </CardHeader>
                                         <CardContent className="space-y-3">
                                             {vsphere.datastores.length ===
-                                            0 ? (
+                                                0 ? (
                                                 <p className="text-sm text-muted-foreground">
                                                     ไม่มีข้อมูล Datastore
                                                 </p>
@@ -747,17 +823,17 @@ export default function Dashboard() {
                                                         const pct =
                                                             ds.capacity > 0
                                                                 ? Math.round(
-                                                                      (used /
-                                                                          ds.capacity) *
-                                                                          100,
-                                                                  )
+                                                                    (used /
+                                                                        ds.capacity) *
+                                                                    100,
+                                                                )
                                                                 : 0;
                                                         const barColor =
                                                             pct >= 85
                                                                 ? 'bg-red-500'
                                                                 : pct >= 70
-                                                                  ? 'bg-amber-500'
-                                                                  : 'bg-green-500';
+                                                                    ? 'bg-amber-500'
+                                                                    : 'bg-green-500';
 
                                                         return (
                                                             <div
@@ -808,6 +884,126 @@ export default function Dashboard() {
                                         </CardContent>
                                     </Card>
                                 </div>
+
+                                <Card className="mb-4">
+                                    <CardHeader className="flex flex-row items-center justify-between space-y-0">
+                                        <CardTitle className="flex items-center gap-2">
+                                            Top 10 VMs by CPU Usage
+                                            {!topCpuLoading && !topCpuError && (
+                                                <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                                                    <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                                                    Live
+                                                </span>
+                                            )}
+                                        </CardTitle>
+                                    </CardHeader>
+                                    <CardContent>
+                                        {topCpuLoading && !topCpuVms ? (
+                                            <div className="h-80 animate-pulse rounded bg-muted" />
+                                        ) : topCpuError && !topCpuVms ? (
+                                            <p className="text-sm text-muted-foreground">
+                                                ไม่สามารถโหลดข้อมูล CPU ของ VM
+                                                จาก vCenter ได้
+                                            </p>
+                                        ) : !topCpuVms || topCpuVms.length === 0 ? (
+                                            <p className="text-sm text-muted-foreground">
+                                                ไม่มี VM ที่เปิดใช้งานอยู่
+                                            </p>
+                                        ) : (
+                                            <div style={{ height: topCpuVms.length * 36 + 20 }}>
+                                                <ResponsiveContainer
+                                                    width="100%"
+                                                    height="100%"
+                                                >
+                                                    <BarChart
+                                                        data={topCpuVms}
+                                                        layout="vertical"
+                                                        margin={{
+                                                            top: 4,
+                                                            right: 36,
+                                                            bottom: 4,
+                                                            left: 4,
+                                                        }}
+                                                    >
+                                                        <CartesianGrid
+                                                            horizontal={false}
+                                                            strokeDasharray="3 3"
+                                                            stroke={gridColor}
+                                                        />
+                                                        <XAxis
+                                                            type="number"
+                                                            domain={[0, 100]}
+                                                            tickFormatter={(v) =>
+                                                                `${v}%`
+                                                            }
+                                                            stroke={axisColor}
+                                                            tickLine={false}
+                                                            axisLine={{
+                                                                stroke: axisColor,
+                                                            }}
+                                                            fontSize={11}
+                                                        />
+                                                        <YAxis
+                                                            type="category"
+                                                            dataKey="name"
+                                                            width={160}
+                                                            stroke={axisColor}
+                                                            tickLine={false}
+                                                            axisLine={false}
+                                                            fontSize={12}
+                                                        />
+                                                        <Tooltip
+                                                            formatter={(
+                                                                value,
+                                                            ) => [
+                                                                    `${value}%`,
+                                                                    'CPU',
+                                                                ]}
+                                                            contentStyle={{
+                                                                fontSize: 12,
+                                                            }}
+                                                        />
+                                                        <Bar
+                                                            dataKey="cpu_pct"
+                                                            radius={[
+                                                                0, 4, 4, 0,
+                                                            ]}
+                                                            isAnimationActive={
+                                                                false
+                                                            }
+                                                        >
+                                                            {topCpuVms.map(
+                                                                (vm) => (
+                                                                    <Cell
+                                                                        key={
+                                                                            vm.id
+                                                                        }
+                                                                        fill={cpuBarColor(
+                                                                            vm.cpu_pct,
+                                                                        )}
+                                                                    />
+                                                                ),
+                                                            )}
+                                                            <LabelList
+                                                                dataKey="cpu_pct"
+                                                                position="right"
+                                                                formatter={(
+                                                                    value,
+                                                                ) =>
+                                                                    `${value}%`
+                                                                }
+                                                                fontSize={11}
+                                                                fill={
+                                                                    labelColor
+                                                                }
+                                                            />
+                                                        </Bar>
+                                                    </BarChart>
+                                                </ResponsiveContainer>
+                                            </div>
+                                        )}
+                                    </CardContent>
+                                </Card>
 
                                 <Card className="mb-4">
                                     <CardHeader className="flex flex-row items-center justify-between space-y-0">
@@ -865,12 +1061,11 @@ export default function Dashboard() {
                                                                     </td>
                                                                     <td className="px-4 py-3">
                                                                         <span
-                                                                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                                                                                vm.power_state ===
+                                                                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${vm.power_state ===
                                                                                 'POWERED_ON'
-                                                                                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                                                                                    : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                                                            }`}
+                                                                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                                                                : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                                                                }`}
                                                                         >
                                                                             {
                                                                                 vm.power_state
@@ -953,11 +1148,11 @@ export default function Dashboard() {
                                         </p>
                                         <p className="text-sm font-medium">
                                             {networkInfo.dns &&
-                                            networkInfo.dns.addresses.length >
+                                                networkInfo.dns.addresses.length >
                                                 0
                                                 ? networkInfo.dns.addresses.join(
-                                                      ', ',
-                                                  )
+                                                    ', ',
+                                                )
                                                 : '-'}
                                         </p>
                                     </div>
@@ -967,11 +1162,11 @@ export default function Dashboard() {
                                         </p>
                                         <p className="text-sm font-medium">
                                             {networkInfo.dns &&
-                                            networkInfo.dns.search_domains
-                                                .length > 0
+                                                networkInfo.dns.search_domains
+                                                    .length > 0
                                                 ? networkInfo.dns.search_domains.join(
-                                                      ', ',
-                                                  )
+                                                    ', ',
+                                                )
                                                 : '-'}
                                         </p>
                                     </div>

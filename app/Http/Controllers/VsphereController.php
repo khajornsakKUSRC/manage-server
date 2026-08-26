@@ -40,6 +40,15 @@ class VsphereController extends Controller
         return $this->respond(fn () => $vsphere->getClusters());
     }
 
+    /**
+     * The 10 powered-on VMs currently using the most CPU — for the
+     * Dashboard's "Top VMs by CPU" bar chart.
+     */
+    public function topCpuVms(PerformanceVsphereService $performance): JsonResponse
+    {
+        return $this->respond(fn () => $performance->topCpuVms(10));
+    }
+
     public function datastores(VsphereService $vsphere): JsonResponse
     {
         return $this->respond(fn () => $vsphere->getDatastores());

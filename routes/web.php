@@ -107,6 +107,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('page:dashboard')->group(function () {
         Route::get('api/vsphere/clusters', [VsphereController::class, 'clusters'])->name('vsphere.clusters');
         Route::get('api/vsphere/datastores', [VsphereController::class, 'datastores'])->name('vsphere.datastores');
+        Route::get('api/vsphere/top-cpu-vms', [VsphereController::class, 'topCpuVms'])->name('vsphere.top-cpu-vms');
     });
 
     Route::middleware('page:appliance')->group(function () {

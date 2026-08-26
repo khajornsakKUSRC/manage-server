@@ -560,6 +560,66 @@ class VsphereService
     }
 
     /**
+     * Same as queryPerf(), but for many entities of the same type in one
+     * SOAP round trip (QueryPerf's querySpec parameter accepts a list) —
+     * used where "the current value for every VM" is needed (e.g. ranking
+     * VMs by CPU usage), where querying one entity at a time would mean
+     * one round trip per VM. maxSample defaults to 1 (just the latest
+     * real-time sample) since a ranking only needs a current value, not a
+     * full historical series.
+     *
+     * @param  array<int, string>  $entityIds
+     * @param  array<int, int>  $counterIds
+     * @return array<string, array<int, array<int, array{time: string, value: float}>>> entityId => counterId => samples
+     */
+    public function queryPerfMulti(array $entityIds, string $entityType, array $counterIds, int $maxSample = 1, bool $isRetry = false): array
+    {
+        if (empty($entityIds) || empty($counterIds)) {
+            return [];
+        }
+
+        $cookie = $this->getSoapSessionCookie();
+
+        $metricIds = collect($counterIds)
+            ->map(fn (int $id) => '<vim25:metricId><vim25:counterId>'.$id.'</vim25:counterId><vim25:instance></vim25:instance></vim25:metricId>')
+            ->implode('');
+
+        $querySpecs = collect($entityIds)
+            ->map(fn (string $entityId) => '<vim25:querySpec>
+        <vim25:entity type="'.$entityType.'">'.$this->xmlEscape($entityId).'</vim25:entity>
+        <vim25:maxSample>'.$maxSample.'</vim25:maxSample>
+        '.$metricIds.'
+        <vim25:intervalId>20</vim25:intervalId>
+        <vim25:format>normal</vim25:format>
+      </vim25:querySpec>')
+            ->implode('');
+
+        $body = '<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:vim25="urn:vim25">
+  <soapenv:Body>
+    <vim25:QueryPerf>
+      <vim25:_this type="PerformanceManager">PerfMgr</vim25:_this>
+      '.$querySpecs.'
+    </vim25:QueryPerf>
+  </soapenv:Body>
+</soapenv:Envelope>';
+
+        $response = $this->soapRequest($body, $cookie);
+
+        if ($this->isSoapSessionExpired($response) && ! $isRetry) {
+            Cache::forget(self::SOAP_SESSION_CACHE_KEY);
+
+            return $this->queryPerfMulti($entityIds, $entityType, $counterIds, $maxSample, isRetry: true);
+        }
+
+        if ($response->failed()) {
+            return [];
+        }
+
+        return $this->parsePerfEntityMetricsMulti($response->body());
+    }
+
+    /**
      * @return array<string, int>
      */
     protected function parsePerfCounterIds(string $body): array
@@ -600,6 +660,20 @@ class VsphereService
      */
     protected function parsePerfEntityMetrics(string $body): array
     {
+        $all = $this->parsePerfEntityMetricsMulti($body);
+
+        return $all === [] ? [] : reset($all);
+    }
+
+    /**
+     * Same as parsePerfEntityMetrics(), but for a QueryPerf response
+     * holding one PerfEntityMetric per entity queried (queryPerfMulti()
+     * sends one querySpec per entity) — keyed by entity id.
+     *
+     * @return array<string, array<int, array<int, array{time: string, value: float}>>>
+     */
+    protected function parsePerfEntityMetricsMulti(string $body): array
+    {
         try {
             $xml = new SimpleXMLElement($body);
         } catch (Throwable) {
@@ -608,42 +682,48 @@ class VsphereService
 
         $xml->registerXPathNamespace('vim25', 'urn:vim25');
 
-        $entity = ($xml->xpath('//vim25:returnval') ?: [])[0] ?? null;
+        $results = [];
 
-        if ($entity === null) {
-            return [];
-        }
+        foreach ($xml->xpath('//vim25:returnval') as $entityNode) {
+            $entityNode->registerXPathNamespace('vim25', 'urn:vim25');
 
-        $entity->registerXPathNamespace('vim25', 'urn:vim25');
+            $entityId = (string) ($entityNode->xpath('vim25:entity')[0] ?? '');
 
-        $timestamps = [];
-
-        foreach ($entity->xpath('vim25:sampleInfo') as $sample) {
-            $sample->registerXPathNamespace('vim25', 'urn:vim25');
-            $timestamps[] = (string) ($sample->xpath('vim25:timestamp')[0] ?? '');
-        }
-
-        $series = [];
-
-        foreach ($entity->xpath('vim25:value') as $valueNode) {
-            $valueNode->registerXPathNamespace('vim25', 'urn:vim25');
-
-            $counterId = (int) ($valueNode->xpath('vim25:id/vim25:counterId')[0] ?? 0);
-
-            $points = [];
-
-            foreach ($valueNode->xpath('vim25:value') as $index => $value) {
-                if (! isset($timestamps[$index]) || $timestamps[$index] === '') {
-                    continue;
-                }
-
-                $points[] = ['time' => $timestamps[$index], 'value' => (float) $value];
+            if ($entityId === '') {
+                continue;
             }
 
-            $series[$counterId] = $points;
+            $timestamps = [];
+
+            foreach ($entityNode->xpath('vim25:sampleInfo') as $sample) {
+                $sample->registerXPathNamespace('vim25', 'urn:vim25');
+                $timestamps[] = (string) ($sample->xpath('vim25:timestamp')[0] ?? '');
+            }
+
+            $series = [];
+
+            foreach ($entityNode->xpath('vim25:value') as $valueNode) {
+                $valueNode->registerXPathNamespace('vim25', 'urn:vim25');
+
+                $counterId = (int) ($valueNode->xpath('vim25:id/vim25:counterId')[0] ?? 0);
+
+                $points = [];
+
+                foreach ($valueNode->xpath('vim25:value') as $index => $value) {
+                    if (! isset($timestamps[$index]) || $timestamps[$index] === '') {
+                        continue;
+                    }
+
+                    $points[] = ['time' => $timestamps[$index], 'value' => (float) $value];
+                }
+
+                $series[$counterId] = $points;
+            }
+
+            $results[$entityId] = $series;
         }
 
-        return $series;
+        return $results;
     }
 
     /**

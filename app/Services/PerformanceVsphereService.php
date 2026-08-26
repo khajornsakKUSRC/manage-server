@@ -99,6 +99,52 @@ class PerformanceVsphereService
     }
 
     /**
+     * Current CPU usage (%) for every powered-on VM, highest first,
+     * capped to $limit — for the Dashboard's "Top VMs by CPU" bar chart.
+     * One batched QueryPerf call covers every VM (see
+     * VsphereService::queryPerfMulti()) rather than one round trip per
+     * VM, and only the latest real-time sample is requested since a
+     * ranking only needs a current value, not a history.
+     *
+     * @return array<int, array{id: string, name: string, cpu_pct: float}>
+     */
+    public function topCpuVms(int $limit = 10): array
+    {
+        $poweredOn = collect($this->vsphere->getVms())
+            ->filter(fn (array $vm) => ($vm['power_state'] ?? null) === 'POWERED_ON');
+
+        if ($poweredOn->isEmpty()) {
+            return [];
+        }
+
+        $cpuCounterId = $this->vsphere->getPerfCounterIds()['cpu.usage.average'] ?? null;
+
+        if ($cpuCounterId === null) {
+            return [];
+        }
+
+        $entityIds = $poweredOn->pluck('vm')->values()->all();
+        $raw = $this->vsphere->queryPerfMulti($entityIds, 'VirtualMachine', [$cpuCounterId]);
+
+        return $poweredOn
+            ->map(function (array $vm) use ($raw, $cpuCounterId) {
+                $points = $raw[$vm['vm']][$cpuCounterId] ?? [];
+                $latest = end($points);
+
+                return [
+                    'id' => $vm['vm'],
+                    'name' => $vm['name'],
+                    'cpu_pct' => $latest ? round($latest['value'] * 0.01, 1) : null,
+                ];
+            })
+            ->filter(fn (array $row) => $row['cpu_pct'] !== null)
+            ->sortByDesc('cpu_pct')
+            ->take($limit)
+            ->values()
+            ->all();
+    }
+
+    /**
      * Sums same-timestamp samples across every counter feeding a chart
      * (e.g. swap-in + swap-out for the memory rate chart) into one series,
      * scaled to the chart's display unit.
