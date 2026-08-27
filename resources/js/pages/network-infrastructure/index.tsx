@@ -39,7 +39,6 @@ interface Monitor {
 }
 
 const STATUS_POLL_MS = 20_000;
-const HEARTBEAT_SLOTS = 40;
 
 // Fixed display order — matches NetworkMonitor::CATEGORIES; any category not
 // in this list (there shouldn't be one, since the form only offers these)
@@ -102,37 +101,28 @@ function formatTime(iso: string): string {
     });
 }
 
-// Pads the front with empty slots so every bar renders HEARTBEAT_SLOTS
-// segments regardless of how much history exists yet (e.g. a monitor added
-// minutes ago) — keeps every monitor's bar visually the same width.
-function heartbeatSlots(heartbeats: Heartbeat[]): (Heartbeat | null)[] {
-    const trimmed = heartbeats.slice(-HEARTBEAT_SLOTS);
-    const padding = Array<null>(HEARTBEAT_SLOTS - trimmed.length).fill(null);
+// Caps how many segments render at once — beyond this the bar would just
+// get needlessly thin. Whatever count is actually available (even just a
+// couple of checks for a monitor added minutes ago) still stretches via
+// flex-1 below to fill the full card width, rather than padding out to
+// this cap with empty placeholders — a sparse bar reads as "not full" even
+// though every check it has is real data.
+const MAX_HEARTBEAT_SEGMENTS = 40;
 
-    return [...padding, ...trimmed];
+function heartbeatSlots(heartbeats: Heartbeat[]): Heartbeat[] {
+    return heartbeats.slice(-MAX_HEARTBEAT_SEGMENTS);
 }
 
-function HeartbeatSegment({ beat }: { beat: Heartbeat | null }) {
+function HeartbeatSegment({ beat }: { beat: Heartbeat }) {
     const bar = (
         <div
             className={`relative h-8 min-w-[3px] flex-1 scale-100 cursor-default rounded-sm shadow-none transition-all duration-150 ease-out hover:z-10 hover:scale-150 hover:shadow-lg ${
-                !beat
-                    ? 'bg-gray-200 dark:bg-gray-700'
-                    : beat.status === 'up'
-                      ? 'bg-green-500 hover:bg-green-400'
-                      : 'bg-red-500 hover:bg-red-400'
+                beat.status === 'up'
+                    ? 'bg-green-500 hover:bg-green-400'
+                    : 'bg-red-500 hover:bg-red-400'
             }`}
         />
     );
-
-    if (!beat) {
-        return (
-            <UiTooltip>
-                <TooltipTrigger asChild>{bar}</TooltipTrigger>
-                <TooltipContent>No data yet</TooltipContent>
-            </UiTooltip>
-        );
-    }
 
     return (
         <UiTooltip>
@@ -152,9 +142,19 @@ function HeartbeatSegment({ beat }: { beat: Heartbeat | null }) {
 }
 
 function HeartbeatBar({ heartbeats }: { heartbeats: Heartbeat[] }) {
+    const slots = heartbeatSlots(heartbeats);
+
+    if (slots.length === 0) {
+        return (
+            <div className="flex h-8 w-full items-center justify-center rounded-sm bg-gray-200 text-[10px] text-muted-foreground dark:bg-gray-700">
+                No data yet
+            </div>
+        );
+    }
+
     return (
         <div className="flex w-full items-center gap-1">
-            {heartbeatSlots(heartbeats).map((beat, i) => (
+            {slots.map((beat, i) => (
                 <HeartbeatSegment key={i} beat={beat} />
             ))}
         </div>

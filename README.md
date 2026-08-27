@@ -96,7 +96,7 @@ Several features depend on Laravel's scheduler actually running — a `* * * * *
 | `alarms:notify-telegram` | Every 5 minutes | vCenter alarm / down-VM Telegram alerts |
 | `smart-detection:scan` | Every 15 minutes | Smart Detection's SSH-based checks |
 | `network-monitors:check` | Every minute (per-monitor interval) | Network Infrastructure uptime checks |
-| `network-monitors:prune` | Daily at 00:10 | Trims Network Infrastructure history older than 7 days |
+| `network-monitors:prune` | Daily at 00:10 | Trims Network Infrastructure history older than 24 hours |
 
 Map Network's switch pings run client-side (every 20 seconds while the page is open) rather than on the scheduler, since 20 seconds is finer-grained than a cron job can go.
 

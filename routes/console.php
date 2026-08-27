@@ -15,14 +15,20 @@ Schedule::command('datastores:snapshot')->dailyAt('00:05');
 
 // Same scheduler dependency as above — polls vCenter for newly triggered
 // alarms and down/powered-off VMs, Telegram-notifying on each one not
-// already sent.
-Schedule::command('alarms:notify-telegram')->everyFiveMinutes();
+// already sent. runInBackground() so a slow vCenter round-trip here can't
+// delay every other command still queued behind it in the same tick (see
+// network-monitors:check below — this was observed blocking it for
+// minutes at a time).
+Schedule::command('alarms:notify-telegram')->everyFiveMinutes()->runInBackground();
 
 // SSHes into every active VM with an IP (silently skipping any that aren't
 // reachable — e.g. Windows VMs, or ones without the shared guest_ssh
 // credential) to run Smart Detection's five checks, Telegram-notifying on
-// each new/reopened warning-or-critical finding.
-Schedule::command('smart-detection:scan')->everyFifteenMinutes();
+// each new/reopened warning-or-critical finding. runInBackground() for the
+// same reason as alarms:notify-telegram above — with enough VMs (each SSH
+// attempt has its own ~10s connect timeout), this could otherwise run for
+// several minutes and block everything queued after it.
+Schedule::command('smart-detection:scan')->everyFifteenMinutes()->runInBackground();
 
 // Feeds the Network Infrastructure page's uptime heartbeats — runs every
 // minute (the scheduler's finest grain) but each monitor only actually gets
@@ -32,5 +38,6 @@ Schedule::command('smart-detection:scan')->everyFifteenMinutes();
 Schedule::command('network-monitors:check')->everyMinute()->withoutOverlapping();
 
 // Keeps network_monitor_checks from growing unbounded — the page only ever
-// shows the last hour, so a week of history is more than enough buffer.
+// shows the last hour (and the uptime % only looks back 24h), so a rolling
+// 24h of history is enough buffer.
 Schedule::command('network-monitors:prune')->dailyAt('00:10');

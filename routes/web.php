@@ -118,6 +118,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('api/vsphere/vms', [VsphereController::class, 'vms'])->name('vsphere.vms');
         Route::get('api/vsphere/hosts', [VsphereController::class, 'hosts'])->name('vsphere.hosts');
         Route::get('api/vsphere/hosts/{host}/network', [VsphereController::class, 'hostNetwork'])->name('vsphere.hosts.network');
+        Route::get('api/vsphere/hosts/{host}/hardware', [VsphereController::class, 'hostHardware'])->name('vsphere.hosts.hardware');
     });
 
     Route::middleware('page:dashboard')->group(function () {

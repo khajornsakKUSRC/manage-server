@@ -35,6 +35,16 @@ class VsphereController extends Controller
         return $this->respond(fn () => $vsphere->getHostNetworkInfo($host));
     }
 
+    /**
+     * One host's hardware/hypervisor summary (vendor, model, CPU, memory,
+     * NIC count) — for the Manage Hosts page's info dialog. Fetched on
+     * demand per host, same reasoning as hostNetwork() above.
+     */
+    public function hostHardware(string $host, VsphereService $vsphere): JsonResponse
+    {
+        return $this->respond(fn () => $vsphere->getHostHardwareInfo($host));
+    }
+
     public function clusters(VsphereService $vsphere): JsonResponse
     {
         return $this->respond(fn () => $vsphere->getClusters());

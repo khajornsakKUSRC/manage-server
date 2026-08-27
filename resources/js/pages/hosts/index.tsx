@@ -1,8 +1,14 @@
 import { Head } from '@inertiajs/react';
-import { AlertCircle, RefreshCw, Server } from 'lucide-react';
+import { AlertCircle, Info, RefreshCw, Server } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 
 interface VsphereHost {
     host: string;
@@ -18,11 +24,54 @@ interface VsphereVm {
     host: string | null;
 }
 
+interface HostHardwareInfo {
+    hypervisor: string | null;
+    manufacturer: string | null;
+    model: string | null;
+    processor_type: string | null;
+    cpu_cores: number | null;
+    sockets: number | null;
+    cores_per_socket: number | null;
+    logical_processors: number | null;
+    nics: number | null;
+    memory_bytes: number | null;
+}
+
+function formatMemory(bytes: number | null): string {
+    if (bytes === null) {
+        return '-';
+    }
+
+    return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+}
+
+function InfoRow({
+    label,
+    value,
+}: {
+    label: string;
+    value: string | number | null;
+}) {
+    return (
+        <div className="flex items-center justify-between border-b py-1.5 text-sm last:border-b-0">
+            <span className="text-muted-foreground">{label}</span>
+            <span className="font-medium">{value ?? '-'}</span>
+        </div>
+    );
+}
+
 export default function Index() {
     const [hosts, setHosts] = useState<VsphereHost[]>([]);
     const [vms, setVms] = useState<VsphereVm[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    const [infoHost, setInfoHost] = useState<VsphereHost | null>(null);
+    const [hardwareInfo, setHardwareInfo] = useState<HostHardwareInfo | null>(
+        null,
+    );
+    const [hardwareLoading, setHardwareLoading] = useState(false);
+    const [hardwareError, setHardwareError] = useState<string | null>(null);
 
     const fetchHostsAndVms = useCallback(async () => {
         const [hostsRes, vmsRes] = await Promise.all([
@@ -130,6 +179,53 @@ export default function Index() {
         return map;
     }, [vms]);
 
+    const openInfo = (host: VsphereHost) => {
+        setInfoHost(host);
+        setHardwareInfo(null);
+        setHardwareError(null);
+        setHardwareLoading(true);
+    };
+
+    // Fetches on open (rather than bulk-loading every host's hardware up
+    // front) since it needs a separate SOAP call per host — same reasoning
+    // as the existing per-host network-info endpoint. openInfo() above
+    // (a click handler, not this effect) already set hardwareLoading true.
+    useEffect(() => {
+        if (!infoHost) {
+            return;
+        }
+
+        let cancelled = false;
+
+        fetch(`/api/vsphere/hosts/${infoHost.host}/hardware`)
+            .then((res) => (res.ok ? res.json() : Promise.reject()))
+            .then((json) => {
+                if (!cancelled) {
+                    setHardwareInfo(json.data ?? null);
+                }
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setHardwareError(
+                        'ไม่สามารถโหลดข้อมูล Hardware ของ Host นี้ได้',
+                    );
+                }
+            })
+            .finally(() => {
+                if (!cancelled) {
+                    setHardwareLoading(false);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [infoHost]);
+
+    const infoHostVmCount = infoHost
+        ? (vmsByHost.get(infoHost.name)?.length ?? 0)
+        : 0;
+
     return (
         <>
             <Head title="Manage Hosts" />
@@ -196,8 +292,22 @@ export default function Index() {
                                                 <Server className="h-4 w-4 text-violet-600 dark:text-violet-400" />
                                             </div>
                                             <div>
-                                                <CardTitle className="text-base">
+                                                <CardTitle className="flex items-center gap-1 text-base">
                                                     {host.name}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            openInfo(host)
+                                                        }
+                                                        className="text-muted-foreground transition-colors hover:text-foreground"
+                                                        title="View host information"
+                                                    >
+                                                        <Info className="h-3.5 w-3.5" />
+                                                        <span className="sr-only">
+                                                            View host
+                                                            information
+                                                        </span>
+                                                    </button>
                                                 </CardTitle>
                                                 <p className="text-xs text-muted-foreground">
                                                     {host.power_state}
@@ -254,6 +364,126 @@ export default function Index() {
                     </div>
                 )}
             </div>
+
+            <Dialog
+                open={infoHost !== null}
+                onOpenChange={(open) => !open && setInfoHost(null)}
+            >
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>
+                            {infoHost?.name ?? 'Host Information'}
+                        </DialogTitle>
+                    </DialogHeader>
+
+                    {hardwareLoading ? (
+                        <div className="space-y-2">
+                            {Array.from({ length: 6 }).map((_, i) => (
+                                <div
+                                    key={i}
+                                    className="h-6 animate-pulse rounded bg-muted"
+                                />
+                            ))}
+                        </div>
+                    ) : hardwareError ? (
+                        <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
+                            <AlertCircle className="h-4 w-4 shrink-0" />
+                            <p>{hardwareError}</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            <div>
+                                <h3 className="mb-1 text-xs font-medium text-muted-foreground uppercase">
+                                    General
+                                </h3>
+                                <div>
+                                    <InfoRow
+                                        label="Hypervisor"
+                                        value={hardwareInfo?.hypervisor ?? null}
+                                    />
+                                    <InfoRow
+                                        label="Model"
+                                        value={hardwareInfo?.model ?? null}
+                                    />
+                                    <InfoRow
+                                        label="Processor Type"
+                                        value={
+                                            hardwareInfo?.processor_type ?? null
+                                        }
+                                    />
+                                    <InfoRow
+                                        label="Logical Processors"
+                                        value={
+                                            hardwareInfo?.logical_processors ??
+                                            null
+                                        }
+                                    />
+                                    <InfoRow
+                                        label="NICs"
+                                        value={hardwareInfo?.nics ?? null}
+                                    />
+                                    <InfoRow
+                                        label="Virtual Machines"
+                                        value={infoHostVmCount}
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <h3 className="mb-1 text-xs font-medium text-muted-foreground uppercase">
+                                    Hardware
+                                </h3>
+                                <div>
+                                    <InfoRow
+                                        label="Manufacturer"
+                                        value={
+                                            hardwareInfo?.manufacturer ?? null
+                                        }
+                                    />
+                                    <InfoRow
+                                        label="Model"
+                                        value={hardwareInfo?.model ?? null}
+                                    />
+                                    <InfoRow
+                                        label="CPU Cores"
+                                        value={hardwareInfo?.cpu_cores ?? null}
+                                    />
+                                    <InfoRow
+                                        label="Processor Type"
+                                        value={
+                                            hardwareInfo?.processor_type ?? null
+                                        }
+                                    />
+                                    <InfoRow
+                                        label="Sockets"
+                                        value={hardwareInfo?.sockets ?? null}
+                                    />
+                                    <InfoRow
+                                        label="Cores per Socket"
+                                        value={
+                                            hardwareInfo?.cores_per_socket ??
+                                            null
+                                        }
+                                    />
+                                    <InfoRow
+                                        label="Logical Processors"
+                                        value={
+                                            hardwareInfo?.logical_processors ??
+                                            null
+                                        }
+                                    />
+                                    <InfoRow
+                                        label="Memory"
+                                        value={formatMemory(
+                                            hardwareInfo?.memory_bytes ?? null,
+                                        )}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
         </>
     );
 }

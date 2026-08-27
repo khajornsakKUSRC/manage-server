@@ -838,11 +838,143 @@ class VsphereService
         return ['vnics' => $vnics, 'dns' => $dns, 'default_gateway' => $defaultGateway];
     }
 
+    /**
+     * One host's hardware/hypervisor summary — the same data vCenter's own
+     * host Summary tab shows (General panel + Hardware panel) — for the
+     * Manage Hosts page's info dialog. Fetched on demand per host, same
+     * reasoning as getHostNetworkInfo().
+     */
+    public function getHostHardwareInfo(string $hostId, bool $isRetry = false): array
+    {
+        $cookie = $this->getSoapSessionCookie();
+
+        $body = '<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:vim25="urn:vim25">
+  <soapenv:Body>
+    <vim25:RetrieveProperties>
+      <vim25:_this type="PropertyCollector">propertyCollector</vim25:_this>
+      <vim25:specSet>
+        <vim25:propSet>
+          <vim25:type>HostSystem</vim25:type>
+          <vim25:pathSet>summary.hardware</vim25:pathSet>
+          <vim25:pathSet>summary.config.product</vim25:pathSet>
+        </vim25:propSet>
+        <vim25:objectSet>
+          <vim25:obj type="HostSystem">'.$this->xmlEscape($hostId).'</vim25:obj>
+        </vim25:objectSet>
+      </vim25:specSet>
+    </vim25:RetrieveProperties>
+  </soapenv:Body>
+</soapenv:Envelope>';
+
+        $response = $this->soapRequest($body, $cookie);
+
+        if ($this->isSoapSessionExpired($response) && ! $isRetry) {
+            Cache::forget(self::SOAP_SESSION_CACHE_KEY);
+
+            return $this->getHostHardwareInfo($hostId, isRetry: true);
+        }
+
+        if ($response->failed()) {
+            throw new RuntimeException("ไม่สามารถโหลดข้อมูล Hardware ของ Host ได้ (HTTP {$response->status()})");
+        }
+
+        return $this->parseHostHardwareInfo($response->body());
+    }
+
+    /**
+     * @return array{hypervisor: ?string, manufacturer: ?string, model: ?string, processor_type: ?string, cpu_cores: ?int, sockets: ?int, cores_per_socket: ?int, logical_processors: ?int, nics: ?int, memory_bytes: ?int}
+     */
+    protected function parseHostHardwareInfo(string $body): array
+    {
+        $empty = [
+            'hypervisor' => null,
+            'manufacturer' => null,
+            'model' => null,
+            'processor_type' => null,
+            'cpu_cores' => null,
+            'sockets' => null,
+            'cores_per_socket' => null,
+            'logical_processors' => null,
+            'nics' => null,
+            'memory_bytes' => null,
+        ];
+
+        try {
+            $xml = new SimpleXMLElement($body);
+        } catch (Throwable) {
+            return $empty;
+        }
+
+        $xml->registerXPathNamespace('vim25', 'urn:vim25');
+
+        $hardware = null;
+        $product = null;
+
+        foreach ($xml->xpath('//vim25:returnval/vim25:propSet') ?: [] as $propSet) {
+            $propSet->registerXPathNamespace('vim25', 'urn:vim25');
+            $name = (string) ($propSet->xpath('vim25:name')[0] ?? '');
+            $val = ($propSet->xpath('vim25:val')[0] ?? null);
+
+            if ($val === null) {
+                continue;
+            }
+
+            $val->registerXPathNamespace('vim25', 'urn:vim25');
+
+            if ($name === 'summary.hardware') {
+                $hardware = $val;
+            } elseif ($name === 'summary.config.product') {
+                $product = $val;
+            }
+        }
+
+        $hypervisor = null;
+
+        if ($product !== null) {
+            $hypervisor = $this->nullableText($product, 'vim25:fullName');
+
+            if ($hypervisor === null) {
+                $name = $this->nullableText($product, 'vim25:name');
+                $version = $this->nullableText($product, 'vim25:version');
+                $build = $this->nullableText($product, 'vim25:build');
+                $hypervisor = trim(collect([$name, $version, $build ? "build {$build}" : null])->filter()->implode(', ')) ?: null;
+            }
+        }
+
+        if ($hardware === null) {
+            return [...$empty, 'hypervisor' => $hypervisor];
+        }
+
+        $numCpuCores = $this->nullableInt($hardware, 'vim25:numCpuCores');
+        $numCpuPkgs = $this->nullableInt($hardware, 'vim25:numCpuPkgs');
+
+        return [
+            'hypervisor' => $hypervisor,
+            'manufacturer' => $this->nullableText($hardware, 'vim25:vendor'),
+            'model' => $this->nullableText($hardware, 'vim25:model'),
+            'processor_type' => $this->nullableText($hardware, 'vim25:cpuModel'),
+            'cpu_cores' => $numCpuCores,
+            'sockets' => $numCpuPkgs,
+            'cores_per_socket' => ($numCpuCores !== null && $numCpuPkgs) ? intdiv($numCpuCores, $numCpuPkgs) : null,
+            'logical_processors' => $this->nullableInt($hardware, 'vim25:numCpuThreads'),
+            'nics' => $this->nullableInt($hardware, 'vim25:numNics'),
+            'memory_bytes' => $this->nullableInt($hardware, 'vim25:memorySize'),
+        ];
+    }
+
     protected function nullableText(SimpleXMLElement $node, string $xpath): ?string
     {
         $value = (string) ($node->xpath($xpath)[0] ?? '');
 
         return $value !== '' ? $value : null;
+    }
+
+    protected function nullableInt(SimpleXMLElement $node, string $xpath): ?int
+    {
+        $value = $this->nullableText($node, $xpath);
+
+        return $value !== null ? (int) $value : null;
     }
 
     protected function pooled(PendingRequest $request, string $sessionId): PendingRequest
