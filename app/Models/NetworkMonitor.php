@@ -12,6 +12,7 @@ class NetworkMonitor extends Model
         'services' => 'Services',
         'dns' => 'DNS',
         'switch' => 'Switch',
+        'server' => 'Server',
     ];
 
     public const TYPES = [

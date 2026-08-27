@@ -5,6 +5,11 @@ import { Area, AreaChart, ResponsiveContainer, Tooltip, YAxis } from 'recharts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+    Tooltip as UiTooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { useAppearance } from '@/hooks/use-appearance';
 
 type MonitorStatus = 'up' | 'down' | 'pending' | 'paused';
@@ -34,13 +39,19 @@ interface Monitor {
 }
 
 const STATUS_POLL_MS = 20_000;
-const HEARTBEAT_SLOTS = 30;
+const HEARTBEAT_SLOTS = 40;
 
-// Fixed display order — matches the categories called out in the request
-// (WAN, Gateway, Services, DNS, Switch); any category not in this list
-// (there shouldn't be one, since the form only offers these) falls back to
-// appearing after them in whatever order the API returned it.
-const CATEGORY_ORDER = ['wan', 'gateway', 'services', 'dns', 'switch'];
+// Fixed display order — matches NetworkMonitor::CATEGORIES; any category not
+// in this list (there shouldn't be one, since the form only offers these)
+// falls back to appearing after them in whatever order the API returned it.
+const CATEGORY_ORDER = [
+    'wan',
+    'gateway',
+    'services',
+    'dns',
+    'switch',
+    'server',
+];
 
 const SERIES_COLOR = { light: '#2563eb', dark: '#60a5fa' };
 
@@ -101,23 +112,51 @@ function heartbeatSlots(heartbeats: Heartbeat[]): (Heartbeat | null)[] {
     return [...padding, ...trimmed];
 }
 
+function HeartbeatSegment({ beat }: { beat: Heartbeat | null }) {
+    const bar = (
+        <div
+            className={`relative h-8 min-w-[3px] flex-1 scale-100 cursor-default rounded-sm shadow-none transition-all duration-150 ease-out hover:z-10 hover:scale-150 hover:shadow-lg ${
+                !beat
+                    ? 'bg-gray-200 dark:bg-gray-700'
+                    : beat.status === 'up'
+                      ? 'bg-green-500 hover:bg-green-400'
+                      : 'bg-red-500 hover:bg-red-400'
+            }`}
+        />
+    );
+
+    if (!beat) {
+        return (
+            <UiTooltip>
+                <TooltipTrigger asChild>{bar}</TooltipTrigger>
+                <TooltipContent>No data yet</TooltipContent>
+            </UiTooltip>
+        );
+    }
+
+    return (
+        <UiTooltip>
+            <TooltipTrigger asChild>{bar}</TooltipTrigger>
+            <TooltipContent>
+                <div className="space-y-0.5">
+                    <p className="text-sm font-semibold">
+                        {beat.status === 'up' ? 'Up' : 'Down'}
+                        {beat.response_time_ms !== null &&
+                            ` — ${beat.response_time_ms} ms`}
+                    </p>
+                    <p className="opacity-80">{formatTime(beat.checked_at)}</p>
+                </div>
+            </TooltipContent>
+        </UiTooltip>
+    );
+}
+
 function HeartbeatBar({ heartbeats }: { heartbeats: Heartbeat[] }) {
     return (
-        <div className="flex items-center gap-0.5">
-            {heartbeatSlots(heartbeats).map((beat, i) =>
-                beat ? (
-                    <div
-                        key={i}
-                        title={`${formatTime(beat.checked_at)} — ${beat.status === 'up' ? 'Up' : 'Down'}${beat.response_time_ms !== null ? ` (${beat.response_time_ms} ms)` : ''}`}
-                        className={`h-6 w-1.5 rounded-sm ${beat.status === 'up' ? 'bg-green-500' : 'bg-red-500'}`}
-                    />
-                ) : (
-                    <div
-                        key={i}
-                        className="h-6 w-1.5 rounded-sm bg-gray-200 dark:bg-gray-700"
-                    />
-                ),
-            )}
+        <div className="flex w-full items-center gap-1">
+            {heartbeatSlots(heartbeats).map((beat, i) => (
+                <HeartbeatSegment key={i} beat={beat} />
+            ))}
         </div>
     );
 }

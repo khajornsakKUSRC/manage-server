@@ -19,6 +19,7 @@ final class Permissions
         'alarms' => 'Alarm Notification',
         'datastores' => 'Datastore',
         'network-infrastructure' => 'Network Infrastructure',
+        'network-map' => 'Map Network',
         'performance' => 'Performance',
         'smart-detection' => 'Smart Detection',
         'modsecurity' => 'Mod Security',

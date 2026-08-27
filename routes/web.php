@@ -13,6 +13,7 @@ use App\Http\Controllers\DatastoreController;
 use App\Http\Controllers\EnvironmentController;
 use App\Http\Controllers\ModSecurityController;
 use App\Http\Controllers\HostController;
+use App\Http\Controllers\NetworkMapController;
 use App\Http\Controllers\NetworkMonitorController;
 use App\Http\Controllers\PerformanceController;
 use App\Http\Controllers\SmartDetectionController;
@@ -72,6 +73,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('page:network-infrastructure')->group(function () {
         Route::get('api/network-monitors/status', [NetworkMonitorController::class, 'status'])->name('network-monitors.status');
         Route::resource('network-monitors', NetworkMonitorController::class)->except(['show']);
+    });
+
+    Route::middleware('page:network-map')->group(function () {
+        Route::get('network-map', [NetworkMapController::class, 'index'])->name('network-map.index');
+        Route::get('api/network-map/nodes', [NetworkMapController::class, 'nodes'])->name('network-map.nodes');
+        Route::get('api/network-map/nodes/{networkMapNode}/ping', [NetworkMapController::class, 'ping'])->name('network-map.ping');
+        Route::post('network-map', [NetworkMapController::class, 'store'])->name('network-map.store');
+        Route::put('network-map/{networkMapNode}', [NetworkMapController::class, 'update'])->name('network-map.update');
+        Route::delete('network-map/{networkMapNode}', [NetworkMapController::class, 'destroy'])->name('network-map.destroy');
     });
 
     Route::middleware('page:performance')->group(function () {
