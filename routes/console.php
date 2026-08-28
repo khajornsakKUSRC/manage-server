@@ -42,7 +42,7 @@ try {
 }
 
 $alarmsEnabled = $notificationSettings?->notify_alarms_enabled ?? true;
-$alarmsIntervalMinutes = $notificationSettings?->notify_alarms_interval_minutes ?? 5;
+$alarmsIntervalMinutes = $notificationSettings?->notify_alarms_interval_minutes ?? 1;
 $smartDetectionIntervalMinutes = $notificationSettings?->notify_smart_detection_interval_minutes ?? 15;
 $certificateEnabled = $notificationSettings?->notify_certificate_enabled ?? true;
 $certificateCheckTime = $notificationSettings?->notify_certificate_check_time ?? '08:00';
@@ -51,12 +51,21 @@ $certificateCheckTime = $notificationSettings?->notify_certificate_check_time ??
 // Telegram-notifying on each one not already sent. Settings → Telegram
 // Notifications → Alarm Notification controls both whether this runs at
 // all and how often — nothing else in the app depends on this command
-// running, so disabling it here is safe. runInBackground() so a slow
-// vCenter round-trip can't delay every other command still queued behind
-// it in the same tick.
+// running, so disabling it here is safe. Defaults to every 1 minute (the
+// scheduler's finest grain) so an alert reaches Telegram as close to
+// "immediately" as this polling-based design allows. runInBackground() so
+// a slow vCenter round-trip can't delay every other command still queued
+// behind it in the same tick. withoutOverlapping() is required, not just
+// nice-to-have: without it, a run that's still going (slow vCenter/
+// Telegram call) when the next tick fires overlaps with the new one, and
+// both processes can race past the "already notified?" check for the same
+// alarm before either records it — this actually happened in production
+// (duplicate-key crashes in the log, and likely a duplicated Telegram
+// message before the crash).
 if ($alarmsEnabled) {
     Schedule::command('alarms:notify-telegram')
         ->cron("*/{$alarmsIntervalMinutes} * * * *")
+        ->withoutOverlapping()
         ->runInBackground();
 }
 
@@ -73,6 +82,7 @@ if ($alarmsEnabled) {
 // block everything queued after it.
 Schedule::command('smart-detection:scan')
     ->cron("*/{$smartDetectionIntervalMinutes} * * * *")
+    ->withoutOverlapping()
     ->runInBackground();
 
 // Warns about VM certificates expiring soon — the window is Settings →
@@ -82,5 +92,6 @@ Schedule::command('smart-detection:scan')
 if ($certificateEnabled) {
     Schedule::command('certificates:notify-telegram')
         ->dailyAt($certificateCheckTime)
+        ->withoutOverlapping()
         ->runInBackground();
 }

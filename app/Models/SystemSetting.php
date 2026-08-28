@@ -95,7 +95,7 @@ class SystemSetting extends Model
                 'datastore_critical_pct' => 85,
                 'certificate_exp_warning_days' => 30,
                 'notify_alarms_enabled' => true,
-                'notify_alarms_interval_minutes' => 5,
+                'notify_alarms_interval_minutes' => 1,
                 'notify_smart_detection_enabled' => true,
                 'notify_smart_detection_interval_minutes' => 15,
                 'notify_network_wan_enabled' => true,

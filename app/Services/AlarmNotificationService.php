@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\AlarmNotification;
 use Carbon\Carbon;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Throwable;
 
 class AlarmNotificationService
@@ -51,13 +52,25 @@ class AlarmNotificationService
                     continue;
                 }
 
-                AlarmNotification::create([
-                    'alarm_key' => $key,
-                    'object_type' => $object['type'],
-                    'object_name' => $object['name'],
-                    'alarm_name' => $alarm['name'],
-                    'notified_at' => now(),
-                ]);
+                // withoutOverlapping() on the schedule (routes/console.php)
+                // is the real guard against two runs racing here — this
+                // catch is only a backstop in case that lock ever slips
+                // (e.g. it expired mid-run on an unusually slow vCenter
+                // call): a duplicate-key error means some other process
+                // already recorded this exact alarm, which is exactly the
+                // outcome we want, so it's swallowed rather than crashing
+                // the rest of this run's loop.
+                try {
+                    AlarmNotification::create([
+                        'alarm_key' => $key,
+                        'object_type' => $object['type'],
+                        'object_name' => $object['name'],
+                        'alarm_name' => $alarm['name'],
+                        'notified_at' => now(),
+                    ]);
+                } catch (UniqueConstraintViolationException) {
+                    continue;
+                }
 
                 $sent++;
             }
@@ -106,13 +119,18 @@ class AlarmNotificationService
                 continue;
             }
 
-            AlarmNotification::create([
-                'alarm_key' => $key,
-                'object_type' => 'VM',
-                'object_name' => $vm['name'],
-                'alarm_name' => 'VM Down',
-                'notified_at' => now(),
-            ]);
+            // See the matching comment in checkAndNotify() above.
+            try {
+                AlarmNotification::create([
+                    'alarm_key' => $key,
+                    'object_type' => 'VM',
+                    'object_name' => $vm['name'],
+                    'alarm_name' => 'VM Down',
+                    'notified_at' => now(),
+                ]);
+            } catch (UniqueConstraintViolationException) {
+                continue;
+            }
 
             $sent++;
         }
