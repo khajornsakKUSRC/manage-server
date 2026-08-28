@@ -49,6 +49,15 @@ return [
         'username' => env('GUEST_SSH_USERNAME'),
         'password' => env('GUEST_SSH_PASSWORD'),
         'port' => env('GUEST_SSH_PORT', 22),
+        // Fallback for hosts where direct root login above is rejected —
+        // confirmed to be the case on most of this network's Linux fleet,
+        // not just the KUWIN Radius server this was first built for (root
+        // SSH login is disabled; a regular account + `su -` is required
+        // instead). Reuses the RADIUS_* variables since it's the same
+        // shared account/policy across the network — see SshSuEscalation.
+        'fallback_username' => env('RADIUS_SSH_USERNAME'),
+        'fallback_password' => env('RADIUS_SSH_PASSWORD'),
+        'su_password' => env('RADIUS_SU_PASSWORD'),
     ],
 
     'telegram' => [

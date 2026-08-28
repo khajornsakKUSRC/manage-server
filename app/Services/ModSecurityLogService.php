@@ -4,7 +4,6 @@ namespace App\Services;
 
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
-use phpseclib3\Net\SSH2;
 use RuntimeException;
 use Throwable;
 
@@ -20,7 +19,9 @@ class ModSecurityLogService
      */
     protected const TAIL_BYTES = 500_000;
 
-    protected const CONNECT_TIMEOUT_SECONDS = 10;
+    public function __construct(
+        protected GuestSshService $ssh,
+    ) {}
 
     /**
      * Connects to the given VM over SSH, tails the ModSecurity audit log,
@@ -33,33 +34,13 @@ class ModSecurityLogService
      */
     public function fetch(string $host): array
     {
-        $username = config('services.guest_ssh.username');
-        $password = config('services.guest_ssh.password');
-        $port = (int) config('services.guest_ssh.port', 22);
+        $output = $this->ssh->run($host, 'tail -c '.self::TAIL_BYTES.' '.self::LOG_PATH.' 2>&1');
 
-        if (! $username || ! $password) {
-            throw new RuntimeException('กรุณาตั้งค่า GUEST_SSH_USERNAME และ GUEST_SSH_PASSWORD ในไฟล์ .env');
+        if (str_contains($output, 'Permission denied') || str_contains($output, 'No such file or directory')) {
+            throw new RuntimeException("ไม่พบไฟล์ log ที่ ".self::LOG_PATH." บนเครื่องนี้ หรือไม่มีสิทธิ์อ่าน: ".trim($output));
         }
 
-        $ssh = new SSH2($host, $port, self::CONNECT_TIMEOUT_SECONDS);
-
-        try {
-            $loggedIn = $ssh->login($username, $password);
-        } catch (Throwable $e) {
-            throw new RuntimeException("ไม่สามารถเชื่อมต่อ SSH ไปยัง {$host} ได้: ".$e->getMessage());
-        }
-
-        if (! $loggedIn) {
-            throw new RuntimeException("เข้าสู่ระบบ SSH ที่ {$host} ไม่สำเร็จ กรุณาตรวจสอบ username/password: ".$ssh->getLastError());
-        }
-
-        $output = $ssh->exec('tail -c '.self::TAIL_BYTES.' '.self::LOG_PATH.' 2>&1');
-
-        if ($ssh->getExitStatus() !== 0) {
-            throw new RuntimeException("ไม่พบไฟล์ log ที่ ".self::LOG_PATH." บนเครื่องนี้ หรือไม่มีสิทธิ์อ่าน: ".trim((string) $output));
-        }
-
-        return $this->parse((string) $output);
+        return $this->parse($output);
     }
 
     /**
@@ -67,6 +48,11 @@ class ModSecurityLogService
      */
     protected function parse(string $raw): array
     {
+        // The log uses CRLF line endings, which breaks every "^...$"
+        // multiline regex below (the trailing \r sits between the matched
+        // text and the \n that "$" anchors to) — normalize to LF first.
+        $raw = str_replace("\r\n", "\n", $raw);
+
         // Transactions are delimited by "--<unique-id>-A--" boundary lines
         // (the standard ModSecurity "serial" audit log format). Splitting
         // consumes the boundary itself, so each resulting block is one
@@ -132,6 +118,11 @@ class ModSecurityLogService
 
     protected function parseTime(string $raw): ?Carbon
     {
+        // Section A's header carries a fractional-seconds suffix (e.g.
+        // ".583086") that "d/M/Y:H:i:s O" can't parse — strip it before
+        // handing off to Carbon, since sub-second precision isn't needed.
+        $raw = preg_replace('/(:\d{2})\.\d+(\s)/', '$1$2', $raw) ?? $raw;
+
         try {
             $time = Carbon::createFromFormat('d/M/Y:H:i:s O', $raw);
         } catch (Throwable) {

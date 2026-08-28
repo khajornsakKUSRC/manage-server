@@ -33,6 +33,8 @@ interface Props {
 }
 
 const NONE = 'none';
+const LIMIT_OPTIONS = [5, 20, 50, 100];
+const DEFAULT_LIMIT = 5;
 
 const SEVERITY_STYLES: Record<string, string> = {
     CRITICAL: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
@@ -65,9 +67,10 @@ export default function Index({ vms }: Props) {
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState('');
     const [filterActive, setFilterActive] = useState(false);
+    const [limit, setLimit] = useState(DEFAULT_LIMIT);
 
     const load = useCallback(
-        async (selectedVm: string, from: string, to: string) => {
+        async (selectedVm: string, from: string, to: string, selectedLimit: number) => {
             if (selectedVm === NONE) {
                 return;
             }
@@ -76,7 +79,10 @@ export default function Index({ vms }: Props) {
             setError(null);
 
             try {
-                const params = new URLSearchParams({ vm: selectedVm });
+                const params = new URLSearchParams({
+                    vm: selectedVm,
+                    limit: String(selectedLimit),
+                });
 
                 if (from) {
                     params.set('from', from);
@@ -120,20 +126,26 @@ export default function Index({ vms }: Props) {
         setEntries(null);
 
         if (value !== NONE) {
-            load(value, '', '');
+            load(value, '', '', limit);
         }
+    };
+
+    const handleLimitChange = (value: string) => {
+        const nextLimit = Number(value);
+        setLimit(nextLimit);
+        load(vm, fromDate, toDate, nextLimit);
     };
 
     const applyFilter = () => {
         setFilterActive(true);
-        load(vm, fromDate, toDate);
+        load(vm, fromDate, toDate, limit);
     };
 
     const clearFilter = () => {
         setFromDate('');
         setToDate('');
         setFilterActive(false);
-        load(vm, '', '');
+        load(vm, '', '', limit);
     };
 
     return (
@@ -168,6 +180,27 @@ export default function Index({ vms }: Props) {
 
                         {vm !== NONE && (
                             <>
+                                <div className="space-y-2">
+                                    <Label>จำนวนรายการ</Label>
+                                    <Select
+                                        value={String(limit)}
+                                        onValueChange={handleLimitChange}
+                                    >
+                                        <SelectTrigger className="w-28">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {LIMIT_OPTIONS.map((option) => (
+                                                <SelectItem
+                                                    key={option}
+                                                    value={String(option)}
+                                                >
+                                                    {option}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
                                 <div className="space-y-2">
                                     <Label htmlFor="from-date">
                                         ตั้งแต่วันที่
@@ -242,7 +275,9 @@ export default function Index({ vms }: Props) {
                             <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => load(vm, fromDate, toDate)}
+                                onClick={() =>
+                                    load(vm, fromDate, toDate, limit)
+                                }
                             >
                                 ลองใหม่
                             </Button>
@@ -267,7 +302,7 @@ export default function Index({ vms }: Props) {
                                     <CardTitle>
                                         {filterActive
                                             ? `Errors ในช่วงที่เลือก`
-                                            : 'Last 5 Errors'}
+                                            : `Last ${limit} Errors`}
                                         <span className="ml-2 text-sm font-normal text-muted-foreground">
                                             {entries.length} รายการ
                                         </span>

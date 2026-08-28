@@ -14,7 +14,17 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { notifyError, notifyInfo } from '@/lib/swal';
+
+const LIMIT_OPTIONS = [5, 20, 50, 100];
+const DEFAULT_LIMIT = 5;
 
 interface RadiusEntry {
     time: string;
@@ -32,6 +42,18 @@ function formatTime(time: string): string {
     return new Date(time).toLocaleString();
 }
 
+// datetime-local inputs need "YYYY-MM-DDTHH:mm" in the *local* timezone —
+// Date#toISOString() is UTC, which would silently shift the displayed
+// default by the server's UTC offset.
+function toDatetimeLocalValue(date: Date): string {
+    const pad = (n: number) => String(n).padStart(2, '0');
+
+    return (
+        `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+        `T${pad(date.getHours())}:${pad(date.getMinutes())}`
+    );
+}
+
 export default function Index({ host }: { host: string }) {
     const [entries, setEntries] = useState<RadiusEntry[] | null>(null);
     const [loading, setLoading] = useState(true);
@@ -40,12 +62,17 @@ export default function Index({ host }: { host: string }) {
     const [username, setUsername] = useState('');
     const [mac, setMac] = useState('');
     const [client, setClient] = useState('');
+    const [status, setStatus] = useState('');
     const [filterActive, setFilterActive] = useState(false);
+    const [limit, setLimit] = useState(DEFAULT_LIMIT);
 
-    const today = new Date().toISOString().slice(0, 10);
     const [exportOpen, setExportOpen] = useState(false);
-    const [exportFrom, setExportFrom] = useState(today);
-    const [exportTo, setExportTo] = useState(today);
+    const [exportFrom, setExportFrom] = useState(() =>
+        toDatetimeLocalValue(new Date(Date.now() - 60 * 60 * 1000)),
+    );
+    const [exportTo, setExportTo] = useState(() =>
+        toDatetimeLocalValue(new Date()),
+    );
 
     const { errors } = usePage().props as unknown as {
         errors?: Record<string, string>;
@@ -80,6 +107,10 @@ export default function Index({ host }: { host: string }) {
             params.set('client', client);
         }
 
+        if (status) {
+            params.set('status', status);
+        }
+
         notifyInfo(
             'กำลังสร้างไฟล์ Excel และเริ่มดาวน์โหลด...',
             'กำลังดำเนินการ',
@@ -93,8 +124,10 @@ export default function Index({ host }: { host: string }) {
             activeUsername: string,
             activeMac: string,
             activeClient: string,
+            activeStatus: string,
+            activeLimit: number,
         ): Promise<RadiusEntry[]> => {
-            const params = new URLSearchParams();
+            const params = new URLSearchParams({ limit: String(activeLimit) });
 
             if (activeUsername) {
                 params.set('username', activeUsername);
@@ -106,6 +139,10 @@ export default function Index({ host }: { host: string }) {
 
             if (activeClient) {
                 params.set('client', activeClient);
+            }
+
+            if (activeStatus) {
+                params.set('status', activeStatus);
             }
 
             const res = await fetch(
@@ -129,13 +166,21 @@ export default function Index({ host }: { host: string }) {
             activeUsername: string,
             activeMac: string,
             activeClient: string,
+            activeStatus: string,
+            activeLimit: number,
         ) => {
             setLoading(true);
             setError(null);
 
             try {
                 setEntries(
-                    await fetchEntries(activeUsername, activeMac, activeClient),
+                    await fetchEntries(
+                        activeUsername,
+                        activeMac,
+                        activeClient,
+                        activeStatus,
+                        activeLimit,
+                    ),
                 );
             } catch (err) {
                 setEntries(null);
@@ -154,7 +199,7 @@ export default function Index({ host }: { host: string }) {
     useEffect(() => {
         let cancelled = false;
 
-        fetchEntries('', '', '')
+        fetchEntries('', '', '', '', DEFAULT_LIMIT)
             .then((data) => {
                 if (!cancelled) {
                     setEntries(data);
@@ -181,16 +226,23 @@ export default function Index({ host }: { host: string }) {
     }, [fetchEntries]);
 
     const applyFilter = () => {
-        setFilterActive(!!(username || mac || client));
-        load(username, mac, client);
+        setFilterActive(!!(username || mac || client || status));
+        load(username, mac, client, status, limit);
     };
 
     const clearFilter = () => {
         setUsername('');
         setMac('');
         setClient('');
+        setStatus('');
         setFilterActive(false);
-        load('', '', '');
+        load('', '', '', '', limit);
+    };
+
+    const handleLimitChange = (value: string) => {
+        const nextLimit = Number(value);
+        setLimit(nextLimit);
+        load(username, mac, client, status, nextLimit);
     };
 
     return (
@@ -201,7 +253,7 @@ export default function Index({ host }: { host: string }) {
                     <div>
                         <h1 className="text-2xl font-bold">KUWIN Radius</h1>
                         <p className="text-sm text-muted-foreground">
-                            Last 50 auth log entries, read live over SSH from{' '}
+                            Auth log entries, read live over SSH from{' '}
                             <span className="font-mono">{host}</span>.
                         </p>
                     </div>
@@ -222,11 +274,11 @@ export default function Index({ host }: { host: string }) {
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
                                     <Label htmlFor="export-from">
-                                        ตั้งแต่วันที่
+                                        ตั้งแต่วันที่-เวลา
                                     </Label>
                                     <Input
                                         id="export-from"
-                                        type="date"
+                                        type="datetime-local"
                                         value={exportFrom}
                                         onChange={(e) =>
                                             setExportFrom(e.target.value)
@@ -234,10 +286,12 @@ export default function Index({ host }: { host: string }) {
                                     />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label htmlFor="export-to">ถึงวันที่</Label>
+                                    <Label htmlFor="export-to">
+                                        ถึงวันที่-เวลา
+                                    </Label>
                                     <Input
                                         id="export-to"
-                                        type="date"
+                                        type="datetime-local"
                                         value={exportTo}
                                         onChange={(e) =>
                                             setExportTo(e.target.value)
@@ -246,9 +300,10 @@ export default function Index({ host }: { host: string }) {
                                 </div>
                             </div>
                             <p className="text-xs text-muted-foreground">
-                                Up to 7 days at a time. Any Username/MAC/ Client
-                                filter currently set above is applied to the
-                                export too.
+                                Up to 1 hour at a time — a wider range
+                                overloads the server. Any Username/MAC/
+                                Client/Status filter currently set above is
+                                applied to the export too.
                             </p>
                             {(errors?.from || errors?.to) && (
                                 <p className="text-sm text-red-500">
@@ -267,6 +322,27 @@ export default function Index({ host }: { host: string }) {
 
                 <Card>
                     <CardContent className="flex flex-wrap items-end gap-4 pt-6">
+                        <div className="space-y-2">
+                            <Label>จำนวนรายการ</Label>
+                            <Select
+                                value={String(limit)}
+                                onValueChange={handleLimitChange}
+                            >
+                                <SelectTrigger className="w-28">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {LIMIT_OPTIONS.map((option) => (
+                                        <SelectItem
+                                            key={option}
+                                            value={String(option)}
+                                        >
+                                            {option}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
                         <div className="space-y-2">
                             <Label htmlFor="username-filter">Username</Label>
                             <Input
@@ -306,6 +382,19 @@ export default function Index({ host }: { host: string }) {
                                 }
                             />
                         </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="status-filter">Status</Label>
+                            <Input
+                                id="status-filter"
+                                className="w-48"
+                                placeholder="e.g. OK, incorrect, eap"
+                                value={status}
+                                onChange={(e) => setStatus(e.target.value)}
+                                onKeyDown={(e) =>
+                                    e.key === 'Enter' && applyFilter()
+                                }
+                            />
+                        </div>
                         <Button
                             size="sm"
                             onClick={applyFilter}
@@ -332,7 +421,9 @@ export default function Index({ host }: { host: string }) {
                     <Card>
                         <CardContent className="flex items-center gap-3 pt-6 text-sm text-muted-foreground">
                             <Loader2 className="h-4 w-4 animate-spin" />
-                            กำลังเชื่อมต่อ SSH และอ่าน log จาก {host}...
+                            {filterActive
+                                ? `กำลังค้นหาทั้ง log จาก ${host}...`
+                                : `กำลังเชื่อมต่อ SSH และอ่าน log จาก ${host}...`}
                         </CardContent>
                     </Card>
                 ) : error ? (
@@ -345,7 +436,9 @@ export default function Index({ host }: { host: string }) {
                             <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => load(username, mac, client)}
+                                onClick={() =>
+                                    load(username, mac, client, status, limit)
+                                }
                             >
                                 ลองใหม่
                             </Button>
@@ -369,7 +462,7 @@ export default function Index({ host }: { host: string }) {
                                 <CardTitle>
                                     {filterActive
                                         ? 'Filtered Results'
-                                        : 'Last 50 Entries'}
+                                        : `Last ${limit} Entries`}
                                     <span className="ml-2 text-sm font-normal text-muted-foreground">
                                         {entries.length} รายการ
                                     </span>

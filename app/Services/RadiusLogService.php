@@ -19,18 +19,21 @@ class RadiusLogService
      */
     protected const TAIL_BYTES = 500_000;
 
-    protected const LIMIT = 50;
+    public const DEFAULT_LIMIT = 5;
+
+    public const ALLOWED_LIMITS = [5, 20, 50, 100];
 
     protected const CONNECT_TIMEOUT_SECONDS = 10;
 
     /**
      * Export range is capped — the live log alone runs to several hundred
-     * MB and ~800k lines/day on this server, so both the date span and the
-     * row count need a ceiling to keep one request from trying to
-     * transfer and parse an unbounded amount of data over an interactive
-     * SSH shell.
+     * MB and ~800k lines/day on this server, so the time span needs a
+     * tight ceiling (as well as the row count below) to keep one request
+     * from trying to transfer and parse an unbounded amount of data over
+     * an interactive SSH shell. A wider range was tried in production and
+     * brought the server down, hence the aggressive 1-hour cap.
      */
-    public const MAX_EXPORT_DAYS = 7;
+    public const MAX_EXPORT_MINUTES = 60;
 
     // Traffic here is heavy enough that even one day can produce
     // hundreds of thousands of lines — capped well below PHP's default
@@ -39,49 +42,92 @@ class RadiusLogService
     // what's actually practical to browse in Excel anyway.
     public const MAX_EXPORT_ROWS = 20_000;
 
+    public function __construct(
+        protected SshSuEscalation $suEscalation,
+    ) {}
+
     /**
-     * Connects over SSH to the configured KUWIN Radius server, tails its
-     * log, parses every "Login OK"/"Login incorrect"-style auth line, and
-     * returns up to the last 50 — newest first — optionally narrowed by
-     * username, MAC address (the RADIUS "cli" field), and/or client (NAS)
-     * name. Each needle matches as a case-insensitive substring, so a
-     * partial username or MAC still finds it.
+     * How many matching lines a filtered search (see buildSearchCommand())
+     * pulls back from the server before PHP-side filtering/limiting, e.g.
+     * a broad status search like "OK" that could otherwise match a huge
+     * fraction of the log.
+     */
+    protected const MAX_SEARCH_LINES = 20_000;
+
+    /**
+     * Connects over SSH to the configured KUWIN Radius server and parses
+     * every "Login OK"/"Login incorrect"-style auth line, returning up to
+     * the last $limit (default 5) — newest first — optionally narrowed by
+     * username, MAC address (the RADIUS "cli" field), client (NAS) name,
+     * and/or status (e.g. "OK", "incorrect", "eap"). Each needle matches
+     * as a case-insensitive substring, so a partial value still finds it.
+     *
+     * With no filters, this only tails the live log's recent bytes (fast,
+     * for casual browsing). As soon as any filter is set, it searches the
+     * *entire* log instead — the live file plus every rotated
+     * radius.log-YYYYMMDD[.gz] — since a search that silently only covered
+     * the last ~500KB window would miss anything older than a few
+     * minutes.
      *
      * @return array<int, array{time: Carbon, request_id: string, status: string, status_ok: bool, username: ?string, auth_type: ?string, client: ?string, port: ?string, mac: ?string, raw: string}>
      */
-    public function fetch(?string $username = null, ?string $mac = null, ?string $client = null): array
+    public function fetch(?string $username = null, ?string $mac = null, ?string $client = null, ?string $status = null, int $limit = self::DEFAULT_LIMIT): array
     {
         $ssh = $this->connect();
 
-        $command = 'tail -c '.self::TAIL_BYTES.' '.self::LOG_PATH;
-        $entries = $this->parse($this->runPrivileged($ssh, $command));
-        $entries = $this->applyFilters($entries, $username, $mac, $client);
+        $hasSearch = $username !== null || $mac !== null || $client !== null || $status !== null;
 
-        return array_slice($entries, 0, self::LIMIT);
+        $command = $hasSearch
+            ? $this->buildSearchCommand($username, $mac, $client, $status)
+            : 'tail -c '.self::TAIL_BYTES.' '.self::LOG_PATH;
+
+        $entries = $this->parse($this->runPrivileged($ssh, $command));
+        $entries = $this->applyFilters($entries, $username, $mac, $client, $status);
+
+        return array_slice($entries, 0, $limit);
     }
 
     /**
      * Same as fetch(), but searches every log covering the given
-     * (inclusive) date range — the live radius.log plus any rotated
-     * radius.log-YYYYMMDD[.gz] files whose date it doesn't cover — instead
-     * of just the recent tail. The date filtering happens on the server
-     * (grep/zgrep) before anything is transferred, since pulling the raw
-     * files here first isn't practical at their size. Results are capped
-     * at MAX_EXPORT_ROWS, newest first.
+     * (inclusive) date+time range — capped at MAX_EXPORT_MINUTES — instead
+     * of just the recent tail: the live radius.log plus any rotated
+     * radius.log-YYYYMMDD[.gz] files whose date it touches. The
+     * minute-level filtering happens on the server (grep/zgrep) before
+     * anything is transferred, since pulling the raw files here first
+     * isn't practical at their size; the exact second-level boundary is
+     * then applied here in PHP, since grep only matched down to the
+     * minute. Results are capped at MAX_EXPORT_ROWS, newest first.
+     *
+     * Even a 1-hour window can carry more than MAX_EXPORT_ROWS lines on a
+     * busy day (observed live: ~20k lines in 30 minutes at peak) — when
+     * that happens, $truncated is set true and the returned rows are
+     * whichever came first chronologically within the window, not the
+     * whole window. $truncated is an explicit by-reference out param
+     * (rather than silently dropping data) so the caller can warn the
+     * user their export may be incomplete instead of it looking complete.
      *
      * @return array<int, array{time: Carbon, request_id: string, status: string, status_ok: bool, username: ?string, auth_type: ?string, client: ?string, port: ?string, mac: ?string, raw: string}>
      */
-    public function fetchRange(Carbon $from, Carbon $to, ?string $username = null, ?string $mac = null, ?string $client = null): array
+    public function fetchRange(Carbon $from, Carbon $to, ?string $username = null, ?string $mac = null, ?string $client = null, ?string $status = null, ?bool &$truncated = null): array
     {
-        if ($from->diffInDays($to) >= self::MAX_EXPORT_DAYS) {
-            throw new RuntimeException('เลือกช่วงวันที่ได้ไม่เกิน '.self::MAX_EXPORT_DAYS.' วัน');
+        if ($from->diffInMinutes($to) > self::MAX_EXPORT_MINUTES) {
+            throw new RuntimeException('เลือกช่วงเวลาได้ไม่เกิน '.self::MAX_EXPORT_MINUTES.' นาที เพื่อป้องกันไม่ให้ server ล่มจากการดึงข้อมูลจำนวนมากเกินไป');
         }
 
         $ssh = $this->connect();
 
         $command = $this->buildRangeCommand($from, $to);
-        $entries = $this->parse($this->runPrivileged($ssh, $command));
-        $entries = $this->applyFilters($entries, $username, $mac, $client);
+        $raw = $this->runPrivileged($ssh, $command);
+        $rawLineCount = $raw === '' ? 0 : count(preg_split('/\r?\n/', trim($raw)) ?: []);
+
+        // head -n MAX_EXPORT_ROWS filled its cap exactly — there could be
+        // more matching lines it never got to read, so treat this as a
+        // (possibly false-positive, but safe to over-warn on) truncation.
+        $truncated = $rawLineCount >= self::MAX_EXPORT_ROWS;
+
+        $entries = $this->parse($raw);
+        $entries = array_values(array_filter($entries, fn (array $entry) => $entry['time']->between($from, $to)));
+        $entries = $this->applyFilters($entries, $username, $mac, $client, $status);
 
         return array_slice($entries, 0, self::MAX_EXPORT_ROWS);
     }
@@ -120,45 +166,83 @@ class RadiusLogService
 
     /**
      * Builds a shell command that greps (or zgreps, for the compressed
-     * rotated ones) every radius.log* file for lines whose syslog date
-     * falls within [from, to], capped at MAX_EXPORT_ROWS lines so a wide
-     * range can't try to stream millions of lines back.
+     * rotated ones) every radius.log* file for lines whose syslog
+     * timestamp falls within [from, to], matched down to the *minute*
+     * (not just the day) since the range is capped at MAX_EXPORT_MINUTES.
+     *
+     * Minute-level matching matters here, not just precision: `head -n
+     * MAX_EXPORT_ROWS` below takes whichever matching lines come first in
+     * file order (i.e. chronologically earliest), so a day-level pattern
+     * on a busy log — where one day alone can hold ~800k lines — would
+     * let head fill its cap from the start of the day and cut off before
+     * ever reaching a requested window later that day, silently returning
+     * nothing. Matching only the actual requested minutes keeps what heads
+     * caps proportionate to the requested window instead of the whole day.
      */
     private function buildRangeCommand(Carbon $from, Carbon $to): string
     {
-        $days = [];
-        $cursor = $from->copy()->startOfDay();
-        $end = $to->copy()->startOfDay();
+        $minutes = [];
+        $cursor = $from->copy()->startOfMinute();
+        $end = $to->copy()->startOfMinute();
 
         while ($cursor->lte($end)) {
             // Syslog's "%b %e" format space-pads single-digit days (e.g.
             // "Aug  9"), which [[:space:]]+ already matches either way.
-            $days[] = preg_quote($cursor->format('M'), '/').'[[:space:]]+'.(int) $cursor->format('j');
-            $cursor->addDay();
+            // The trailing ":" anchors to the seconds field so e.g. "14:5"
+            // can't accidentally match inside "14:50".
+            $minutes[] = preg_quote($cursor->format('M'), '/').'[[:space:]]+'.(int) $cursor->format('j').'[[:space:]]+'.$cursor->format('H:i').':';
+            $cursor->addMinute();
         }
 
-        $pattern = escapeshellarg('^('.implode('|', $days).')[[:space:]]');
+        $pattern = escapeshellarg('^('.implode('|', $minutes).')');
         $glob = self::LOG_PATH.'*';
 
         return 'for f in '.$glob.'; do case "$f" in *.gz) zgrep -h -E '.$pattern.' "$f" ;; *) grep -h -E '.$pattern.' "$f" ;; esac; done | head -n '.self::MAX_EXPORT_ROWS;
     }
 
     /**
+     * Builds a shell command that greps (or zgreps, for the compressed
+     * rotated ones) every radius.log* file for any line containing at
+     * least one of the given search terms — a cheap OR superset done on
+     * the server so only plausibly-relevant lines are transferred; the
+     * exact per-field AND matching happens afterwards in applyFilters().
+     * Capped at MAX_SEARCH_LINES lines so a broad, unselective term (e.g.
+     * a status search for "OK") can't try to stream a huge share of the
+     * log back.
+     */
+    private function buildSearchCommand(?string $username, ?string $mac, ?string $client, ?string $status): string
+    {
+        $terms = array_values(array_filter(
+            [$username, $mac, $client, $status],
+            fn (?string $term) => $term !== null && $term !== '',
+        ));
+
+        $needleFlags = implode(' ', array_map(
+            fn (string $term) => '-e '.escapeshellarg($term),
+            $terms,
+        ));
+
+        $glob = self::LOG_PATH.'*';
+
+        return 'for f in '.$glob.'; do case "$f" in *.gz) zgrep -h -i -F '.$needleFlags.' "$f" ;; *) grep -h -i -F '.$needleFlags.' "$f" ;; esac; done | head -n '.self::MAX_SEARCH_LINES;
+    }
+
+    /**
      * @return array<int, array{time: Carbon, request_id: string, status: string, status_ok: bool, username: ?string, auth_type: ?string, client: ?string, port: ?string, mac: ?string, raw: string}>
      */
-    private function applyFilters(array $entries, ?string $username, ?string $mac, ?string $client): array
+    private function applyFilters(array $entries, ?string $username, ?string $mac, ?string $client, ?string $status): array
     {
-        if ($username === null && $mac === null && $client === null) {
+        if ($username === null && $mac === null && $client === null && $status === null) {
             return $entries;
         }
 
         return array_values(array_filter(
             $entries,
-            fn (array $entry) => $this->matches($entry, $username, $mac, $client),
+            fn (array $entry) => $this->matches($entry, $username, $mac, $client, $status),
         ));
     }
 
-    private function matches(array $entry, ?string $username, ?string $mac, ?string $client): bool
+    private function matches(array $entry, ?string $username, ?string $mac, ?string $client, ?string $status): bool
     {
         if ($username !== null && ! $this->contains($entry['username'], $username)) {
             return false;
@@ -169,6 +253,10 @@ class RadiusLogService
         }
 
         if ($client !== null && ! $this->contains($entry['client'], $client)) {
+            return false;
+        }
+
+        if ($status !== null && ! $this->contains($entry['status'], $status)) {
             return false;
         }
 
@@ -188,6 +276,11 @@ class RadiusLogService
      */
     private function runPrivileged(SSH2 $ssh, string $command): string
     {
+        // A full-log search (grep/zgrep across every rotated file) can run
+        // well past the connect timeout — give the direct-exec path the
+        // same generous headroom the su-fallback path below already gets.
+        $ssh->setTimeout(120);
+
         $direct = (string) $ssh->exec($command.' 2>&1');
 
         // Commands piped through e.g. `| head` (see buildRangeCommand())
@@ -208,62 +301,10 @@ class RadiusLogService
             );
         }
 
-        return $this->runAsRoot($ssh, $suPassword, $command);
-    }
-
-    /**
-     * Escalates to root over an interactive shell — phpseclib's exec()
-     * only runs one-off non-interactive commands, so "su" (which needs a
-     * password typed back at its own prompt) has to go through the
-     * shell's write()/read() instead, the same way a human would type
-     * `su`, wait for "Password:", then type the password.
-     */
-    private function runAsRoot(SSH2 $ssh, string $suPassword, string $command): string
-    {
-        $ssh->setTimeout(self::CONNECT_TIMEOUT_SECONDS);
-
-        // Opens the interactive shell channel (lazily, on first read/write)
-        // and waits out the login banner/MOTD down to the initial prompt.
-        $ssh->read('/[$#]\s*$/', SSH2::READ_REGEX);
-
-        $ssh->write("su -\n");
-        $passwordPrompt = $ssh->read('/[Pp]assword:\s*$/', SSH2::READ_REGEX);
-
-        if ($ssh->isTimeout() || ! preg_match('/[Pp]assword:/', $passwordPrompt)) {
-            throw new RuntimeException('ไม่สามารถ su เป็น root ได้ (ไม่พบ prompt สำหรับใส่ password)');
-        }
-
-        $ssh->write($suPassword."\n");
-        $rootPrompt = $ssh->read('/[#$]\s*$/', SSH2::READ_REGEX);
-
-        if ($ssh->isTimeout() || stripos($rootPrompt, 'incorrect') !== false || stripos($rootPrompt, 'failure') !== false) {
-            throw new RuntimeException('su เป็น root ไม่สำเร็จ กรุณาตรวจสอบ RADIUS_SU_PASSWORD ในไฟล์ .env');
-        }
-
-        // A random marker delimits the command's output from the shell's
-        // next prompt, since an interactive shell has no clean EOF signal
-        // the way exec() does. The shell echoes back whatever we typed
-        // (including the literal "echo $marker" text) before the command
-        // even runs, so the *first* time the marker appears in the stream
-        // is just that echo — discard it and wait for the marker a second
-        // time, which is the real `echo` output after the command finishes.
         // Export commands over a large date range can take a while (grep
-        // across a 600MB+ file), so this uses a longer timeout than the
-        // earlier prompt exchanges.
-        $marker = 'RADIUSLOGEND_'.bin2hex(random_bytes(4));
-        $ssh->setTimeout(120);
-        $ssh->write($command.'; echo '.$marker."\n");
-        $ssh->read('/'.$marker.'/', SSH2::READ_REGEX);
-        $result = (string) $ssh->read('/'.$marker.'/', SSH2::READ_REGEX);
-
-        // Strip everything from the marker onward (its own echo, plus the
-        // shell's next prompt), and any terminal control sequences (e.g.
-        // bracketed-paste mode toggles) bash's readline emits around the
-        // prompt boundary.
-        $result = preg_replace('/'.$marker.'.*$/s', '', $result) ?? $result;
-        $result = preg_replace('/\x1B\[[0-9;?]*[a-zA-Z]/', '', $result) ?? $result;
-
-        return trim($result);
+        // across a 600MB+ file), so this gets a longer exec timeout than
+        // SshSuEscalation's default.
+        return $this->suEscalation->runAsRoot($ssh, $suPassword, $command, self::CONNECT_TIMEOUT_SECONDS, 120);
     }
 
     /**

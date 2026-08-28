@@ -7,6 +7,7 @@ use App\Services\ModSecurityLogService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 use Throwable;
@@ -15,7 +16,7 @@ class ModSecurityController extends Controller
 {
     protected const DEFAULT_LIMIT = 5;
 
-    protected const FILTERED_LIMIT = 50;
+    protected const ALLOWED_LIMITS = [5, 20, 50, 100];
 
     public function index(): Response
     {
@@ -29,9 +30,9 @@ class ModSecurityController extends Controller
     }
 
     /**
-     * Fetches ModSecurity audit log errors from the given VM over SSH. With
-     * no date range, returns the last 5 errors; with one, returns every
-     * error within it (capped at 50).
+     * Fetches ModSecurity audit log errors from the given VM over SSH,
+     * newest first, capped at the requested limit (default 5; with a date
+     * range, only errors within it are considered before the cap applies).
      */
     public function logs(Request $request, ModSecurityLogService $logService): JsonResponse
     {
@@ -39,7 +40,10 @@ class ModSecurityController extends Controller
             'vm' => 'required|string',
             'from' => 'nullable|date_format:Y-m-d',
             'to' => 'nullable|date_format:Y-m-d|after_or_equal:from',
+            'limit' => ['nullable', 'integer', Rule::in(self::ALLOWED_LIMITS)],
         ]);
+
+        $limit = $validated['limit'] ?? self::DEFAULT_LIMIT;
 
         $vm = Vm::active()->where('name', $validated['vm'])->first();
 
@@ -65,11 +69,9 @@ class ModSecurityController extends Controller
                 $transactions,
                 fn (array $t) => (! $from || $t['time']->gte($from)) && (! $to || $t['time']->lte($to)),
             ));
-
-            $transactions = array_slice($transactions, 0, self::FILTERED_LIMIT);
-        } else {
-            $transactions = array_slice($transactions, 0, self::DEFAULT_LIMIT);
         }
+
+        $transactions = array_slice($transactions, 0, $limit);
 
         return response()->json([
             'data' => array_map(fn (array $t) => [
