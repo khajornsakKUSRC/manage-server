@@ -1,17 +1,20 @@
-import { Head, router } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import {
     AlertTriangle,
     Gauge,
     LayoutGrid,
     Palette,
     Save,
+    Send,
     ShieldCheck,
     Thermometer,
     Trash2,
     Upload,
     Wrench,
 } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { useMemo, useRef, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -37,6 +40,14 @@ interface Settings {
     mem_critical_pct: number;
     datastore_warning_pct: number;
     datastore_critical_pct: number;
+    certificate_exp_warning_days: number;
+    notify_alarms_enabled: boolean;
+    notify_alarms_interval_minutes: number;
+    notify_smart_detection_enabled: boolean;
+    notify_smart_detection_interval_minutes: number;
+    notify_network_wan_enabled: boolean;
+    notify_certificate_enabled: boolean;
+    notify_certificate_check_time: string;
     session_timeout_minutes: number;
     disabled_pages: string[];
     room_temp_min_c: number;
@@ -45,10 +56,16 @@ interface Settings {
     room_humidity_max_pct: number;
 }
 
+interface TelegramStatus {
+    main_configured: boolean;
+    daily_report_configured: boolean;
+}
+
 interface Props {
     settings: Settings;
     timezones: string[];
     pages: Record<string, string>;
+    telegramStatus: TelegramStatus;
 }
 
 function ToggleSwitch({
@@ -188,7 +205,72 @@ function RangeRow({
     );
 }
 
-export default function Index({ settings, timezones, pages }: Props) {
+function IntervalInput({
+    value,
+    onChange,
+    disabled,
+}: {
+    value: number;
+    onChange: (value: number) => void;
+    disabled?: boolean;
+}) {
+    return (
+        <div className="flex items-center gap-2">
+            <Input
+                type="number"
+                min={1}
+                max={60}
+                className="w-16"
+                value={value}
+                disabled={disabled}
+                onChange={(e) => onChange(Number(e.target.value))}
+            />
+            <span className="text-xs text-muted-foreground">min</span>
+        </div>
+    );
+}
+
+function NotificationRow({
+    title,
+    description,
+    enabled,
+    onEnabledChange,
+    scheduleControl,
+    error,
+}: {
+    title: string;
+    description: ReactNode;
+    enabled?: boolean;
+    onEnabledChange?: (value: boolean) => void;
+    scheduleControl: ReactNode;
+    error?: string;
+}) {
+    return (
+        <div className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 sm:flex-1">
+                <p className="font-medium">{title}</p>
+                <p className="text-xs text-muted-foreground">{description}</p>
+                {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
+            </div>
+            <div className="flex shrink-0 items-center gap-4">
+                {scheduleControl}
+                {onEnabledChange && (
+                    <ToggleSwitch
+                        checked={enabled ?? false}
+                        onChange={onEnabledChange}
+                    />
+                )}
+            </div>
+        </div>
+    );
+}
+
+export default function Index({
+    settings,
+    timezones,
+    pages,
+    telegramStatus,
+}: Props) {
     const [maintenanceEnabled, setMaintenanceEnabled] = useState(
         settings.maintenance_mode_enabled,
     );
@@ -213,6 +295,30 @@ export default function Index({ settings, timezones, pages }: Props) {
     const [datastoreCritical, setDatastoreCritical] = useState(
         settings.datastore_critical_pct,
     );
+    const [certificateExpWarningDays, setCertificateExpWarningDays] = useState(
+        settings.certificate_exp_warning_days,
+    );
+
+    const [alarmsEnabled, setAlarmsEnabled] = useState(
+        settings.notify_alarms_enabled,
+    );
+    const [alarmsIntervalMinutes, setAlarmsIntervalMinutes] = useState(
+        settings.notify_alarms_interval_minutes,
+    );
+    const [smartDetectionEnabled, setSmartDetectionEnabled] = useState(
+        settings.notify_smart_detection_enabled,
+    );
+    const [smartDetectionIntervalMinutes, setSmartDetectionIntervalMinutes] =
+        useState(settings.notify_smart_detection_interval_minutes);
+    const [networkWanEnabled, setNetworkWanEnabled] = useState(
+        settings.notify_network_wan_enabled,
+    );
+    const [certificateNotifyEnabled, setCertificateNotifyEnabled] = useState(
+        settings.notify_certificate_enabled,
+    );
+    const [certificateCheckTime, setCertificateCheckTime] = useState(
+        settings.notify_certificate_check_time,
+    );
 
     const [roomTempMin, setRoomTempMin] = useState(settings.room_temp_min_c);
     const [roomTempMax, setRoomTempMax] = useState(settings.room_temp_max_c);
@@ -227,8 +333,13 @@ export default function Index({ settings, timezones, pages }: Props) {
         settings.session_timeout_minutes,
     );
 
+    // Array.isArray guard is cheap insurance against a malformed value ever
+    // reaching this state — a plain string here would silently decompose
+    // into individual characters below (`[...current, key]`), which is
+    // exactly how a past data-corruption bug (see SafeJsonArrayCast)
+    // manifested as menus flipping on/off seemingly at random.
     const [disabledPages, setDisabledPages] = useState<string[]>(
-        settings.disabled_pages,
+        Array.isArray(settings.disabled_pages) ? settings.disabled_pages : [],
     );
 
     const togglePage = (key: string, enabled: boolean) => {
@@ -285,6 +396,15 @@ export default function Index({ settings, timezones, pages }: Props) {
                 mem_critical_pct: memCritical,
                 datastore_warning_pct: datastoreWarning,
                 datastore_critical_pct: datastoreCritical,
+                certificate_exp_warning_days: certificateExpWarningDays,
+                notify_alarms_enabled: alarmsEnabled,
+                notify_alarms_interval_minutes: alarmsIntervalMinutes,
+                notify_smart_detection_enabled: smartDetectionEnabled,
+                notify_smart_detection_interval_minutes:
+                    smartDetectionIntervalMinutes,
+                notify_network_wan_enabled: networkWanEnabled,
+                notify_certificate_enabled: certificateNotifyEnabled,
+                notify_certificate_check_time: certificateCheckTime,
                 session_timeout_minutes: sessionTimeout,
                 disabled_pages: disabledPages,
                 room_temp_min_c: roomTempMin,
@@ -385,11 +505,10 @@ export default function Index({ settings, timezones, pages }: Props) {
                     <CardContent className="space-y-2">
                         <p className="mb-2 text-xs text-muted-foreground">
                             Turn a menu off to hide it from everyone&apos;s
-                            navigation immediately (shown grayed-out to
-                            anyone who already has access to it) and block
-                            the page itself, without touching individual
-                            user permissions — useful for menus that aren&apos;t
-                            ready yet.
+                            navigation immediately (shown grayed-out to anyone
+                            who already has access to it) and block the page
+                            itself, without touching individual user permissions
+                            — useful for menus that aren&apos;t ready yet.
                         </p>
                         {Object.entries(pages).map(([key, label]) => {
                             const enabled = !disabledPages.includes(key);
@@ -523,6 +642,173 @@ export default function Index({ settings, timezones, pages }: Props) {
 
                 <Card>
                     <CardHeader className="flex flex-row items-center gap-2 space-y-0">
+                        <div className="rounded-lg bg-sky-100 p-2 dark:bg-sky-900/30">
+                            <Send className="h-4 w-4 text-sky-600 dark:text-sky-400" />
+                        </div>
+                        <CardTitle>Telegram Notifications</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <p className="text-sm text-muted-foreground">
+                            Turn each notification on or off, and adjust how
+                            often it's checked. Changes take effect on the next
+                            scheduled run — no restart needed.
+                        </p>
+
+                        <div className="divide-y rounded-lg border px-4">
+                            <NotificationRow
+                                title="Alarm Notification"
+                                description="A new vCenter alarm triggers, or a VM goes down/powers off."
+                                enabled={alarmsEnabled}
+                                onEnabledChange={setAlarmsEnabled}
+                                scheduleControl={
+                                    <IntervalInput
+                                        value={alarmsIntervalMinutes}
+                                        onChange={setAlarmsIntervalMinutes}
+                                        disabled={!alarmsEnabled}
+                                    />
+                                }
+                                error={errors.notify_alarms_interval_minutes}
+                            />
+                            <NotificationRow
+                                title="Smart Detection"
+                                description="A new or reopened warning/critical finding (brute force, malware, process, port, or failed service). The underlying scan itself always keeps running on this interval, whether or not the alert is enabled — the Smart Detection page depends on it."
+                                enabled={smartDetectionEnabled}
+                                onEnabledChange={setSmartDetectionEnabled}
+                                scheduleControl={
+                                    <IntervalInput
+                                        value={smartDetectionIntervalMinutes}
+                                        onChange={
+                                            setSmartDetectionIntervalMinutes
+                                        }
+                                    />
+                                }
+                                error={
+                                    errors.notify_smart_detection_interval_minutes
+                                }
+                            />
+                            <NotificationRow
+                                title="Network Infrastructure (WAN)"
+                                description="A WAN monitor goes down, or recovers. Check frequency is set per-monitor on the Network Infrastructure page, not here."
+                                enabled={networkWanEnabled}
+                                onEnabledChange={setNetworkWanEnabled}
+                                scheduleControl={
+                                    <span className="text-xs text-muted-foreground">
+                                        Per-monitor
+                                    </span>
+                                }
+                            />
+                            <NotificationRow
+                                title="Certificate Expiration"
+                                description={
+                                    <>
+                                        Site-wide default lead time before a VM
+                                        certificate expires (or is already
+                                        expired) — also drives the highlighting
+                                        on Manage VMs. Alerted once per
+                                        certificate, not repeated daily.
+                                        Individual VMs can override this from
+                                        their Edit page. See{' '}
+                                        <Link
+                                            href="/certificate-expiration"
+                                            className="underline underline-offset-2"
+                                        >
+                                            Certificate Expiration
+                                        </Link>{' '}
+                                        for current status.
+                                    </>
+                                }
+                                enabled={certificateNotifyEnabled}
+                                onEnabledChange={setCertificateNotifyEnabled}
+                                scheduleControl={
+                                    <div className="flex items-center gap-2">
+                                        <Input
+                                            type="number"
+                                            min={1}
+                                            max={365}
+                                            className="w-16"
+                                            value={certificateExpWarningDays}
+                                            onChange={(e) =>
+                                                setCertificateExpWarningDays(
+                                                    Number(e.target.value),
+                                                )
+                                            }
+                                        />
+                                        <span className="text-xs text-muted-foreground">
+                                            days before, at
+                                        </span>
+                                        <Input
+                                            type="time"
+                                            className="w-28"
+                                            value={certificateCheckTime}
+                                            disabled={!certificateNotifyEnabled}
+                                            onChange={(e) =>
+                                                setCertificateCheckTime(
+                                                    e.target.value,
+                                                )
+                                            }
+                                        />
+                                    </div>
+                                }
+                                error={
+                                    errors.certificate_exp_warning_days ??
+                                    errors.notify_certificate_check_time
+                                }
+                            />
+                            <NotificationRow
+                                title="Daily Report"
+                                description="Sent as a PDF when a Daily Report is saved on the Daily Report page — always manual, not on a schedule."
+                                scheduleControl={
+                                    <span className="text-xs text-muted-foreground">
+                                        Manual
+                                    </span>
+                                }
+                            />
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                            <Badge
+                                className={
+                                    telegramStatus.main_configured
+                                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                        : 'bg-gray-100 text-gray-600 dark:bg-gray-800/60 dark:text-gray-400'
+                                }
+                            >
+                                Main bot:{' '}
+                                {telegramStatus.main_configured
+                                    ? 'Configured'
+                                    : 'Not configured'}
+                            </Badge>
+                            <Badge
+                                className={
+                                    telegramStatus.daily_report_configured
+                                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                        : 'bg-gray-100 text-gray-600 dark:bg-gray-800/60 dark:text-gray-400'
+                                }
+                            >
+                                Daily Report bot:{' '}
+                                {telegramStatus.daily_report_configured
+                                    ? 'Configured'
+                                    : 'Not configured'}
+                            </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                            Bot tokens and chat IDs are set via environment
+                            variables (
+                            <code className="rounded bg-muted px-1 py-0.5">
+                                TELEGRAM_BOT_TOKEN
+                            </code>
+                            /
+                            <code className="rounded bg-muted px-1 py-0.5">
+                                TELEGRAM_CHAT_ID
+                            </code>
+                            , and a separate pair for the Daily Report), not
+                            editable from this page.
+                        </p>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader className="flex flex-row items-center gap-2 space-y-0">
                         <div className="rounded-lg bg-blue-100 p-2 dark:bg-blue-900/30">
                             <Gauge className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                         </div>
@@ -578,11 +864,11 @@ export default function Index({ settings, timezones, pages }: Props) {
                     <CardContent className="space-y-5">
                         <p className="text-xs text-muted-foreground">
                             Normal range for the server room&apos;s
-                            temperature/humidity sensor, shown as the two
-                            gauge cards on the Dashboard. A reading outside
-                            this range is flagged as abnormal; no sensor is
-                            connected yet, so both gauges show &quot;No
-                            Data&quot; until one starts reporting.
+                            temperature/humidity sensor, shown as the two gauge
+                            cards on the Dashboard. A reading outside this range
+                            is flagged as abnormal; no sensor is connected yet,
+                            so both gauges show &quot;No Data&quot; until one
+                            starts reporting.
                         </p>
 
                         <div className="grid gap-5 sm:grid-cols-2">

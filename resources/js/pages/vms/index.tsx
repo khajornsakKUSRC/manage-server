@@ -35,7 +35,7 @@ const ALL_ACTIVE = '__all__';
 
 const STATE_OPTIONS = [
     { value: 'POWERED_ON', label: 'Powered On' },
-    { value: 'POWERED_OFF', label: 'Powered Off' }
+    { value: 'POWERED_OFF', label: 'Powered Off' },
     //{ value: 'SUSPENDED', label: 'Suspended' },
 ];
 
@@ -52,6 +52,7 @@ interface VmRow {
     uptime_seconds: number | null;
     notes: string | null;
     certificate_exp: string | null;
+    certificate_notify_days: number | null;
     is_active: boolean;
     host: { id: number; name: string } | null;
 }
@@ -119,8 +120,13 @@ function formatUptime(seconds: number | null): string {
 
 // Highlights certificates that are already expired or expiring soon, so
 // they're noticeable while scanning the list rather than needing to open
-// each VM to check.
-function certificateExpClass(certificateExp: string | null): string {
+// each VM to check. warningDays matches Settings → Monitoring Thresholds →
+// Certificate Expiration Warning (days) — the same window that drives the
+// Telegram notification, so the color here and the alert agree.
+function certificateExpClass(
+    certificateExp: string | null,
+    warningDays: number,
+): string {
     if (!certificateExp) {
         return 'text-muted-foreground';
     }
@@ -139,7 +145,7 @@ function certificateExpClass(certificateExp: string | null): string {
         return 'font-medium text-red-600 dark:text-red-400';
     }
 
-    if (daysUntil <= 30) {
+    if (daysUntil <= warningDays) {
         return 'font-medium text-amber-600 dark:text-amber-400';
     }
 
@@ -158,9 +164,11 @@ function DetailField({ label, value }: { label: string; value: string }) {
 export default function Index({
     vms,
     filters,
+    certificateExpWarningDays,
 }: {
     vms: Paginated<VmRow>;
     filters: VmFilters;
+    certificateExpWarningDays: number;
 }) {
     const [syncing, setSyncing] = useState(false);
     const [viewVm, setViewVm] = useState<VmRow | null>(null);
@@ -280,20 +288,18 @@ export default function Index({
         });
     };
 
-    const filteredImportCandidates = (importCandidates ?? []).filter(
-        (vm) => {
-            if (importSearch === '') {
-                return true;
-            }
+    const filteredImportCandidates = (importCandidates ?? []).filter((vm) => {
+        if (importSearch === '') {
+            return true;
+        }
 
-            const q = importSearch.toLowerCase();
+        const q = importSearch.toLowerCase();
 
-            return (
-                vm.name.toLowerCase().includes(q) ||
-                (vm.host ?? '').toLowerCase().includes(q)
-            );
-        },
-    );
+        return (
+            vm.name.toLowerCase().includes(q) ||
+            (vm.host ?? '').toLowerCase().includes(q)
+        );
+    });
 
     const allFilteredSelected =
         filteredImportCandidates.length > 0 &&
@@ -379,9 +385,7 @@ export default function Index({
                                 <Search className="pointer-events-none absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                                 <Input
                                     value={search}
-                                    onChange={(e) =>
-                                        setSearch(e.target.value)
-                                    }
+                                    onChange={(e) => setSearch(e.target.value)}
                                     placeholder="Search name, IP, or host..."
                                     className="pl-8"
                                 />
@@ -431,9 +435,7 @@ export default function Index({
                                         All
                                     </SelectItem>
                                     <SelectItem value="1">Active</SelectItem>
-                                    <SelectItem value="0">
-                                        Inactive
-                                    </SelectItem>
+                                    <SelectItem value="0">Inactive</SelectItem>
                                 </SelectContent>
                             </Select>
 
@@ -523,9 +525,25 @@ export default function Index({
                                                 </Badge>
                                             </td>
                                             <td
-                                                className={`px-3 py-2 whitespace-nowrap ${certificateExpClass(vm.certificate_exp)}`}
+                                                className={`px-3 py-2 whitespace-nowrap ${certificateExpClass(vm.certificate_exp, vm.certificate_notify_days ?? certificateExpWarningDays)}`}
+                                                title={
+                                                    vm.certificate_notify_days !==
+                                                    null
+                                                        ? `Custom reminder: ${vm.certificate_notify_days} day(s) before expiration`
+                                                        : undefined
+                                                }
                                             >
                                                 {vm.certificate_exp || '-'}
+                                                {vm.certificate_notify_days !==
+                                                    null && (
+                                                    <span className="ml-1 text-xs text-muted-foreground">
+                                                        (
+                                                        {
+                                                            vm.certificate_notify_days
+                                                        }
+                                                        d)
+                                                    </span>
+                                                )}
                                             </td>
                                             <td
                                                 className="max-w-[200px] truncate px-3 py-2"
@@ -713,9 +731,7 @@ export default function Index({
                                 type="date"
                                 className="max-w-xs"
                                 value={importDate}
-                                onChange={(e) =>
-                                    setImportDate(e.target.value)
-                                }
+                                onChange={(e) => setImportDate(e.target.value)}
                             />
                         </div>
 

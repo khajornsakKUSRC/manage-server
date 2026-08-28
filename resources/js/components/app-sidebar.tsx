@@ -9,11 +9,13 @@ import {
     Map,
     Network,
     Radar,
+    Radio,
     Server,
     Monitor,
     ClipboardList,
     Settings,
     ShieldAlert,
+    ShieldCheck,
     Users,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -55,6 +57,12 @@ const mainNavItems: PermissionedNavItem[] = [
         href: '/vms',
         icon: Monitor,
         permission: 'vms',
+    },
+    {
+        title: 'Certificate Expiration',
+        href: '/certificate-expiration',
+        icon: ShieldCheck,
+        permission: 'certificate-expiration',
     },
     {
         title: 'Appliance Health',
@@ -111,6 +119,12 @@ const mainNavItems: PermissionedNavItem[] = [
         permission: 'modsecurity',
     },
     {
+        title: 'KUWIN Radius',
+        href: '/kuwin-radius',
+        icon: Radio,
+        permission: 'kuwin-radius',
+    },
+    {
         title: 'Manage Users',
         href: '/users',
         icon: Users,
@@ -136,7 +150,11 @@ const SMART_DETECTION_COUNT_POLL_MS = 60_000;
 export function AppSidebar() {
     const { auth, siteSettings } = usePage().props;
     const user = auth.user;
-    const disabledPages = new Set(siteSettings.disabled_pages ?? []);
+    const disabledPages = new Set(
+        Array.isArray(siteSettings.disabled_pages)
+            ? siteSettings.disabled_pages
+            : [],
+    );
 
     const visibleNavItems = mainNavItems.filter((item) => {
         if (!user) {

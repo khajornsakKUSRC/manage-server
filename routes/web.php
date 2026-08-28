@@ -7,6 +7,7 @@ Route::redirect('/', '/login')->name('home');
 use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\AlarmController;
 use App\Http\Controllers\ApplianceController;
+use App\Http\Controllers\CertificateExpirationController;
 use App\Http\Controllers\DailyReportController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatastoreController;
@@ -16,6 +17,7 @@ use App\Http\Controllers\HostController;
 use App\Http\Controllers\NetworkMapController;
 use App\Http\Controllers\NetworkMonitorController;
 use App\Http\Controllers\PerformanceController;
+use App\Http\Controllers\RadiusController;
 use App\Http\Controllers\SmartDetectionController;
 use App\Http\Controllers\SystemSettingController;
 use App\Http\Controllers\UserController;
@@ -46,6 +48,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('api/vms/certificate-candidates', [VmController::class, 'certificateExpCandidates'])->name('vms.certificate-candidates');
         Route::post('vms/certificate-exp', [VmController::class, 'bulkCertificateExp'])->name('vms.certificate-exp');
         Route::resource('vms', VmController::class)->except(['create', 'store']);
+    });
+
+    Route::middleware('page:certificate-expiration')->group(function () {
+        Route::get('certificate-expiration', [CertificateExpirationController::class, 'index'])->name('certificate-expiration.index');
     });
 
     Route::middleware('page:appliance')->group(function () {
@@ -101,6 +107,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('page:modsecurity')->group(function () {
         Route::get('modsecurity', [ModSecurityController::class, 'index'])->name('modsecurity.index');
         Route::get('api/modsecurity/logs', [ModSecurityController::class, 'logs'])->name('modsecurity.logs');
+    });
+
+    Route::middleware('page:kuwin-radius')->group(function () {
+        Route::get('kuwin-radius', [RadiusController::class, 'index'])->name('kuwin-radius.index');
+        Route::get('api/kuwin-radius/logs', [RadiusController::class, 'logs'])->name('kuwin-radius.logs');
+        Route::get('kuwin-radius/export', [RadiusController::class, 'export'])->name('kuwin-radius.export');
     });
 
     // User management and the Activity Log (every user's actions + IPs) are

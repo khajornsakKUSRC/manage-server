@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\SmartDetectionFinding;
+use App\Models\SystemSetting;
 use App\Models\Vm;
 use App\Services\SmartDetectionService;
 use App\Services\TelegramNotifier;
@@ -18,6 +19,12 @@ class RunSmartDetection extends Command
     public function handle(SmartDetectionService $detectionService, TelegramNotifier $telegram): int
     {
         $vms = Vm::active()->whereNotNull('ip')->where('ip', '!=', '')->get();
+
+        // Settings → Telegram Notifications → Smart Detection only mutes
+        // the alert below — the scan itself (and the findings it stores
+        // for the Smart Detection page) always runs on its configured
+        // interval regardless.
+        $notifyEnabled = SystemSetting::current()->notify_smart_detection_enabled;
 
         $scanned = 0;
         $alerted = 0;
@@ -46,6 +53,10 @@ class RunSmartDetection extends Command
                 // Smart Detection page, not worth a Telegram alert each
                 // time.
                 if (! $result['is_new_or_reopened'] || $finding->severity === 'info') {
+                    continue;
+                }
+
+                if (! $notifyEnabled) {
                     continue;
                 }
 

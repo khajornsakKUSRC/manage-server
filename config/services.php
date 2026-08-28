@@ -69,4 +69,22 @@ return [
         'token' => env('ENVIRONMENT_SENSOR_TOKEN'),
     ],
 
+    // The KUWIN Radius page reads /var/log/radius/radius.log from this host
+    // over SSH. It's a dedicated box outside the regular VM fleet Smart
+    // Detection/ModSecurity SSH into, so it very likely needs its own
+    // login rather than the shared guest_ssh credential above — set
+    // RADIUS_SSH_USERNAME/PASSWORD to override; left blank, it falls back
+    // to GUEST_SSH_USERNAME/PASSWORD in case they do happen to work here.
+    'radius' => [
+        'host' => env('RADIUS_SERVER_HOST', '158.108.96.18'),
+        'ssh_username' => env('RADIUS_SSH_USERNAME'),
+        'ssh_password' => env('RADIUS_SSH_PASSWORD'),
+        'ssh_port' => env('RADIUS_SSH_PORT', 22),
+        // The SSH login above (a regular user) can't read radius.log
+        // directly — the same "su -" root password used manually is
+        // needed to escalate over an interactive shell. Left blank, the
+        // page fails with a clear message instead of silently trying.
+        'su_password' => env('RADIUS_SU_PASSWORD'),
+    ],
+
 ];

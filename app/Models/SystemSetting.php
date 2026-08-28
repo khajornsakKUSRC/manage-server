@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\SafeJsonArrayCast;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
 
@@ -21,6 +22,14 @@ class SystemSetting extends Model
         'mem_critical_pct',
         'datastore_warning_pct',
         'datastore_critical_pct',
+        'certificate_exp_warning_days',
+        'notify_alarms_enabled',
+        'notify_alarms_interval_minutes',
+        'notify_smart_detection_enabled',
+        'notify_smart_detection_interval_minutes',
+        'notify_network_wan_enabled',
+        'notify_certificate_enabled',
+        'notify_certificate_check_time',
         'session_timeout_minutes',
         'disabled_pages',
         'room_temp_min_c',
@@ -37,8 +46,15 @@ class SystemSetting extends Model
         'mem_critical_pct' => 'integer',
         'datastore_warning_pct' => 'integer',
         'datastore_critical_pct' => 'integer',
+        'certificate_exp_warning_days' => 'integer',
+        'notify_alarms_enabled' => 'boolean',
+        'notify_alarms_interval_minutes' => 'integer',
+        'notify_smart_detection_enabled' => 'boolean',
+        'notify_smart_detection_interval_minutes' => 'integer',
+        'notify_network_wan_enabled' => 'boolean',
+        'notify_certificate_enabled' => 'boolean',
         'session_timeout_minutes' => 'integer',
-        'disabled_pages' => 'array',
+        'disabled_pages' => SafeJsonArrayCast::class,
         'room_temp_min_c' => 'float',
         'room_temp_max_c' => 'float',
         'room_humidity_min_pct' => 'float',
@@ -77,6 +93,14 @@ class SystemSetting extends Model
                 'mem_critical_pct' => 85,
                 'datastore_warning_pct' => 70,
                 'datastore_critical_pct' => 85,
+                'certificate_exp_warning_days' => 30,
+                'notify_alarms_enabled' => true,
+                'notify_alarms_interval_minutes' => 5,
+                'notify_smart_detection_enabled' => true,
+                'notify_smart_detection_interval_minutes' => 15,
+                'notify_network_wan_enabled' => true,
+                'notify_certificate_enabled' => true,
+                'notify_certificate_check_time' => '08:00',
                 'session_timeout_minutes' => 120,
                 'disabled_pages' => ['modsecurity'],
                 'room_temp_min_c' => 18,

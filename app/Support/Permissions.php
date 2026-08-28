@@ -14,6 +14,7 @@ final class Permissions
         'dashboard' => 'Dashboard',
         'hosts' => 'Manage Hosts',
         'vms' => 'Manage VMs',
+        'certificate-expiration' => 'Certificate Expiration',
         'appliance' => 'Appliance Health',
         'daily-reports' => 'Daily Report',
         'alarms' => 'Alarm Notification',
@@ -23,6 +24,7 @@ final class Permissions
         'performance' => 'Performance',
         'smart-detection' => 'Smart Detection',
         'modsecurity' => 'Mod Security',
+        'kuwin-radius' => 'KUWIN Radius',
     ];
 
     /**

@@ -25,6 +25,7 @@ interface VmDetail {
     uptime_seconds: number | null;
     notes: string | null;
     certificate_exp: string | null;
+    certificate_notify_days: number | null;
     is_active: boolean;
     host: { id: number; name: string } | null;
 }
@@ -70,15 +71,36 @@ function ReadOnlyField({ label, value }: { label: string; value: string }) {
     );
 }
 
-export default function Edit({ vm }: { vm: VmDetail }) {
-    const { data, setData, put, processing, errors } = useForm({
+export default function Edit({
+    vm,
+    certificateExpWarningDays,
+}: {
+    vm: VmDetail;
+    certificateExpWarningDays: number;
+}) {
+    const { data, setData, put, transform, processing, errors } = useForm({
         notes: vm.notes || '',
         certificate_exp: vm.certificate_exp || '',
+        certificate_notify_days:
+            vm.certificate_notify_days !== null
+                ? String(vm.certificate_notify_days)
+                : '',
         is_active: vm.is_active ?? true,
     });
 
     const submit = (e: React.FormEvent) => {
         e.preventDefault();
+
+        // Empty means "use the global default" — send null rather than an
+        // empty string, which would fail the backend's `integer` rule.
+        transform((formData) => ({
+            ...formData,
+            certificate_notify_days:
+                formData.certificate_notify_days === ''
+                    ? null
+                    : formData.certificate_notify_days,
+        }));
+
         put(`/vms/${vm.id}`);
     };
 
@@ -173,6 +195,38 @@ export default function Edit({ vm }: { vm: VmDetail }) {
                                 {errors.certificate_exp && (
                                     <p className="text-sm text-red-500">
                                         {errors.certificate_exp}
+                                    </p>
+                                )}
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="certificate_notify_days">
+                                    Certificate Reminder (days before)
+                                </Label>
+                                <Input
+                                    id="certificate_notify_days"
+                                    type="number"
+                                    min={1}
+                                    max={365}
+                                    placeholder={`Default: ${certificateExpWarningDays} days`}
+                                    value={data.certificate_notify_days}
+                                    onChange={(e) =>
+                                        setData(
+                                            'certificate_notify_days',
+                                            e.target.value,
+                                        )
+                                    }
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                    Leave blank to use the site-wide default (
+                                    {certificateExpWarningDays} days, set in
+                                    Settings). Set this to alert earlier for a
+                                    certificate that needs more lead time to
+                                    renew — e.g. 60.
+                                </p>
+                                {errors.certificate_notify_days && (
+                                    <p className="text-sm text-red-500">
+                                        {errors.certificate_notify_days}
                                     </p>
                                 )}
                             </div>

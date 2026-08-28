@@ -21,6 +21,8 @@ class Vm extends Model
         'update_status',
         'notes',
         'certificate_exp',
+        'certificate_notified_exp',
+        'certificate_notify_days',
         'is_active',
     ];
 
@@ -29,6 +31,7 @@ class Vm extends Model
         return [
             'is_active' => 'boolean',
             'uptime_seconds' => 'integer',
+            'certificate_notify_days' => 'integer',
         ];
     }
 

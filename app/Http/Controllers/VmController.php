@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Host;
+use App\Models\SystemSetting;
 use App\Models\Vm;
 use App\Services\ActivityLogger;
 use App\Services\VmVsphereService;
@@ -24,6 +25,7 @@ class VmController extends Controller
         return Inertia::render('vms/index', [
             'vms' => $this->filteredQuery($filters)->paginate(20)->withQueryString(),
             'filters' => $filters,
+            'certificateExpWarningDays' => SystemSetting::current()->certificate_exp_warning_days,
         ]);
     }
 
@@ -119,6 +121,7 @@ class VmController extends Controller
     {
         return Inertia::render('vms/edit', [
             'vm' => $vm->load('host'),
+            'certificateExpWarningDays' => SystemSetting::current()->certificate_exp_warning_days,
         ]);
     }
 
@@ -132,6 +135,7 @@ class VmController extends Controller
         $validated = $request->validate([
             'notes' => 'nullable|string',
             'certificate_exp' => 'nullable|date_format:Y-m-d',
+            'certificate_notify_days' => 'nullable|integer|min:1|max:365',
             'is_active' => 'boolean',
         ]);
 

@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\NetworkMonitor;
 use App\Models\NetworkMonitorCheck;
+use App\Models\SystemSetting;
 use App\Services\NetworkMonitorCheckService;
 use App\Services\TelegramNotifier;
 use Illuminate\Console\Command;
@@ -57,11 +58,14 @@ class CheckNetworkMonitors extends Command
      * rather than on every check while it stays down, by comparing against
      * the status the monitor had before this check. Scoped to the "wan"
      * category since that's the link an outage actually pages someone
-     * for; other categories stay silent here.
+     * for; other categories stay silent here. Gated by Settings → Telegram
+     * Notifications → Network Infrastructure (WAN) — disabling that only
+     * mutes this alert, the check itself (and the Network Infrastructure
+     * page's data) keeps running regardless.
      */
     private function notifyWanTransition(TelegramNotifier $telegram, NetworkMonitor $monitor, ?string $previousStatus, array $result): void
     {
-        if ($monitor->category !== 'wan') {
+        if ($monitor->category !== 'wan' || ! SystemSetting::current()->notify_network_wan_enabled) {
             return;
         }
 
