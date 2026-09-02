@@ -41,12 +41,30 @@ class SystemSettingController extends Controller
                 'notify_network_wan_enabled' => $settings->notify_network_wan_enabled,
                 'notify_certificate_enabled' => $settings->notify_certificate_enabled,
                 'notify_certificate_check_time' => $settings->notify_certificate_check_time,
+                'notify_services_enabled' => $settings->notify_services_enabled,
+                'notify_services_interval_minutes' => $settings->notify_services_interval_minutes,
+                'notify_services_emails' => $settings->notify_services_emails ?? [],
+                'notify_services_telegram_enabled' => $settings->notify_services_telegram_enabled,
                 'session_timeout_minutes' => $settings->session_timeout_minutes,
                 'disabled_pages' => $settings->disabled_pages ?? [],
                 'room_temp_min_c' => $settings->room_temp_min_c,
                 'room_temp_max_c' => $settings->room_temp_max_c,
                 'room_humidity_min_pct' => $settings->room_humidity_min_pct,
                 'room_humidity_max_pct' => $settings->room_humidity_max_pct,
+                'it_repair_email_header' => $settings->it_repair_email_header,
+                'it_repair_email_subject' => $settings->it_repair_email_subject,
+                'it_repair_email_body' => $settings->it_repair_email_body,
+                'it_repair_email_footer' => $settings->it_repair_email_footer,
+                'it_repair_email_logo_url' => $settings->it_repair_email_logo_path
+                    ? Storage::disk('public')->url($settings->it_repair_email_logo_path)
+                    : null,
+                'it_repair_email_show_logo' => $settings->it_repair_email_show_logo,
+                'it_repair_email_logo_width' => $settings->it_repair_email_logo_width,
+                'it_repair_email_heading_color' => $settings->it_repair_email_heading_color,
+                'it_repair_email_text_color' => $settings->it_repair_email_text_color,
+                'it_repair_email_background_color' => $settings->it_repair_email_background_color,
+                'it_repair_email_layout' => $settings->it_repair_email_layout,
+                'it_repair_email_content_width' => $settings->it_repair_email_content_width,
             ],
             'timezones' => timezone_identifiers_list(),
             'pages' => Permissions::PAGES,
@@ -80,6 +98,12 @@ class SystemSettingController extends Controller
             'notify_network_wan_enabled' => 'boolean',
             'notify_certificate_enabled' => 'boolean',
             'notify_certificate_check_time' => 'required|date_format:H:i',
+            'notify_services_enabled' => 'boolean',
+            'notify_services_interval_minutes' => 'required|integer|min:1|max:60',
+            'notify_services_emails' => 'array|max:50',
+            'notify_services_emails.*.email' => 'required|email|max:255|distinct:ignore_case',
+            'notify_services_emails.*.notify' => 'boolean',
+            'notify_services_telegram_enabled' => 'boolean',
             'session_timeout_minutes' => 'required|integer|min:1|max:43200',
             'disabled_pages' => 'array',
             'disabled_pages.*' => [Rule::in(Permissions::keys())],
@@ -87,12 +111,25 @@ class SystemSettingController extends Controller
             'room_temp_max_c' => 'required|numeric|min:-40|max:100|gte:room_temp_min_c',
             'room_humidity_min_pct' => 'required|numeric|min:0|max:100',
             'room_humidity_max_pct' => 'required|numeric|min:0|max:100|gte:room_humidity_min_pct',
+            'it_repair_email_header' => 'nullable|string|max:255',
+            'it_repair_email_subject' => 'nullable|string|max:255',
+            'it_repair_email_body' => 'nullable|string|max:5000',
+            'it_repair_email_footer' => 'nullable|string|max:1000',
+            'it_repair_email_logo' => 'nullable|image|max:1024',
+            'remove_it_repair_email_logo' => 'boolean',
+            'it_repair_email_show_logo' => 'boolean',
+            'it_repair_email_logo_width' => 'required|integer|min:16|max:400',
+            'it_repair_email_heading_color' => ['required', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
+            'it_repair_email_text_color' => ['required', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
+            'it_repair_email_background_color' => ['required', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
+            'it_repair_email_layout' => ['required', Rule::in(['full', 'centered'])],
+            'it_repair_email_content_width' => 'required|integer|min:320|max:1200',
         ]);
 
         $settings = SystemSetting::current();
 
         $attributes = collect($validated)
-            ->except(['favicon', 'remove_favicon'])
+            ->except(['favicon', 'remove_favicon', 'it_repair_email_logo', 'remove_it_repair_email_logo'])
             ->all();
 
         // Inertia's FormData serializer (required here for the favicon
@@ -102,6 +139,19 @@ class SystemSettingController extends Controller
         // Default it explicitly rather than silently leaving the column
         // (and the previously-disabled page) untouched.
         $attributes['disabled_pages'] = $validated['disabled_pages'] ?? [];
+
+        // Same FormData-drops-empty-arrays reasoning as disabled_pages
+        // above. Re-shape each row to exactly {email, notify:bool} so the
+        // stored JSON never carries the "1"/"0" strings FormData sends for
+        // booleans, and lowercase the address so the list can't hold the
+        // same recipient twice in different case.
+        $attributes['notify_services_emails'] = collect($validated['notify_services_emails'] ?? [])
+            ->map(fn (array $row) => [
+                'email' => strtolower(trim($row['email'])),
+                'notify' => filter_var($row['notify'] ?? false, FILTER_VALIDATE_BOOLEAN),
+            ])
+            ->values()
+            ->all();
 
         if ($request->boolean('remove_favicon') && $settings->favicon_path) {
             Storage::disk('public')->delete($settings->favicon_path);
@@ -114,6 +164,19 @@ class SystemSettingController extends Controller
             }
 
             $attributes['favicon_path'] = $request->file('favicon')->store('favicon', 'public');
+        }
+
+        if ($request->boolean('remove_it_repair_email_logo') && $settings->it_repair_email_logo_path) {
+            Storage::disk('public')->delete($settings->it_repair_email_logo_path);
+            $attributes['it_repair_email_logo_path'] = null;
+        }
+
+        if ($request->hasFile('it_repair_email_logo')) {
+            if ($settings->it_repair_email_logo_path) {
+                Storage::disk('public')->delete($settings->it_repair_email_logo_path);
+            }
+
+            $attributes['it_repair_email_logo_path'] = $request->file('it_repair_email_logo')->store('it-repair-email', 'public');
         }
 
         $settings->update($attributes);

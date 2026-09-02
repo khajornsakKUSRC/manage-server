@@ -13,6 +13,10 @@ createInertiaApp({
     title: (title) => (title ? `${title} - ${appName}` : appName),
     layout: (name) => {
         switch (true) {
+            // Public, login-free page — renders its own full-page shell,
+            // no app sidebar / auth chrome.
+            case name === 'it-repair/public':
+                return undefined;
             case name.startsWith('auth/'):
                 return AuthLayout;
             case name.startsWith('settings/'):

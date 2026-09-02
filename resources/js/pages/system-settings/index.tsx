@@ -1,9 +1,12 @@
+import type { RequestPayload } from '@inertiajs/core';
 import { Head, Link, router } from '@inertiajs/react';
 import {
     AlertTriangle,
     Gauge,
     LayoutGrid,
+    Mail,
     Palette,
+    Plus,
     Save,
     Send,
     ShieldCheck,
@@ -28,6 +31,11 @@ import {
 } from '@/components/ui/select';
 import { notifyError, notifySuccess } from '@/lib/swal';
 
+interface NotifyEmail {
+    email: string;
+    notify: boolean;
+}
+
 interface Settings {
     maintenance_mode_enabled: boolean;
     maintenance_message: string | null;
@@ -48,12 +56,28 @@ interface Settings {
     notify_network_wan_enabled: boolean;
     notify_certificate_enabled: boolean;
     notify_certificate_check_time: string;
+    notify_services_enabled: boolean;
+    notify_services_interval_minutes: number;
+    notify_services_emails: NotifyEmail[];
+    notify_services_telegram_enabled: boolean;
     session_timeout_minutes: number;
     disabled_pages: string[];
     room_temp_min_c: number;
     room_temp_max_c: number;
     room_humidity_min_pct: number;
     room_humidity_max_pct: number;
+    it_repair_email_header: string | null;
+    it_repair_email_subject: string | null;
+    it_repair_email_body: string | null;
+    it_repair_email_footer: string | null;
+    it_repair_email_logo_url: string | null;
+    it_repair_email_show_logo: boolean;
+    it_repair_email_logo_width: number;
+    it_repair_email_heading_color: string;
+    it_repair_email_text_color: string;
+    it_repair_email_background_color: string;
+    it_repair_email_layout: 'full' | 'centered';
+    it_repair_email_content_width: number;
 }
 
 interface TelegramStatus {
@@ -320,6 +344,49 @@ export default function Index({
         settings.notify_certificate_check_time,
     );
 
+    const [servicesEnabled, setServicesEnabled] = useState(
+        settings.notify_services_enabled,
+    );
+    const [servicesIntervalMinutes, setServicesIntervalMinutes] = useState(
+        settings.notify_services_interval_minutes,
+    );
+    const [servicesEmails, setServicesEmails] = useState<NotifyEmail[]>(
+        settings.notify_services_emails ?? [],
+    );
+    const [newServiceEmail, setNewServiceEmail] = useState('');
+
+    const addServiceEmail = () => {
+        const email = newServiceEmail.trim().toLowerCase();
+
+        if (!email) {
+            return;
+        }
+
+        if (servicesEmails.some((r) => r.email.toLowerCase() === email)) {
+            setNewServiceEmail('');
+
+            return;
+        }
+
+        // Added with notification permission off — it has to be granted
+        // explicitly before this address receives anything.
+        setServicesEmails((prev) => [...prev, { email, notify: false }]);
+        setNewServiceEmail('');
+    };
+
+    const removeServiceEmail = (email: string) => {
+        setServicesEmails((prev) => prev.filter((r) => r.email !== email));
+    };
+
+    const setServiceEmailNotify = (email: string, notify: boolean) => {
+        setServicesEmails((prev) =>
+            prev.map((r) => (r.email === email ? { ...r, notify } : r)),
+        );
+    };
+    const [servicesTelegramEnabled, setServicesTelegramEnabled] = useState(
+        settings.notify_services_telegram_enabled,
+    );
+
     const [roomTempMin, setRoomTempMin] = useState(settings.room_temp_min_c);
     const [roomTempMax, setRoomTempMax] = useState(settings.room_temp_max_c);
     const [roomHumidityMin, setRoomHumidityMin] = useState(
@@ -331,6 +398,44 @@ export default function Index({
 
     const [sessionTimeout, setSessionTimeout] = useState(
         settings.session_timeout_minutes,
+    );
+
+    const [itRepairEmailHeader, setItRepairEmailHeader] = useState(
+        settings.it_repair_email_header ?? '',
+    );
+    const [itRepairEmailSubject, setItRepairEmailSubject] = useState(
+        settings.it_repair_email_subject ?? '',
+    );
+    const [itRepairEmailBody, setItRepairEmailBody] = useState(
+        settings.it_repair_email_body ?? '',
+    );
+    const [itRepairEmailFooter, setItRepairEmailFooter] = useState(
+        settings.it_repair_email_footer ?? '',
+    );
+    const [itRepairEmailLogoFile, setItRepairEmailLogoFile] =
+        useState<File | null>(null);
+    const [removeItRepairEmailLogo, setRemoveItRepairEmailLogo] =
+        useState(false);
+    const itRepairEmailLogoInputRef = useRef<HTMLInputElement>(null);
+    const [itRepairEmailShowLogo, setItRepairEmailShowLogo] = useState(
+        settings.it_repair_email_show_logo,
+    );
+    const [itRepairEmailLogoWidth, setItRepairEmailLogoWidth] = useState(
+        settings.it_repair_email_logo_width,
+    );
+    const [itRepairEmailHeadingColor, setItRepairEmailHeadingColor] = useState(
+        settings.it_repair_email_heading_color,
+    );
+    const [itRepairEmailTextColor, setItRepairEmailTextColor] = useState(
+        settings.it_repair_email_text_color,
+    );
+    const [itRepairEmailBackgroundColor, setItRepairEmailBackgroundColor] =
+        useState(settings.it_repair_email_background_color);
+    const [itRepairEmailLayout, setItRepairEmailLayout] = useState<
+        'full' | 'centered'
+    >(settings.it_repair_email_layout);
+    const [itRepairEmailContentWidth, setItRepairEmailContentWidth] = useState(
+        settings.it_repair_email_content_width,
     );
 
     // Array.isArray guard is cheap insurance against a malformed value ever
@@ -377,6 +482,39 @@ export default function Index({
         }
     };
 
+    const itRepairEmailLogoPreview = useMemo(
+        () =>
+            itRepairEmailLogoFile
+                ? URL.createObjectURL(itRepairEmailLogoFile)
+                : null,
+        [itRepairEmailLogoFile],
+    );
+
+    // The uploaded logo if any, else the stored one, else the bundled KU
+    // logo shipped at public/image — matches the mailable's fallback.
+    const currentItRepairEmailLogoUrl = removeItRepairEmailLogo
+        ? '/image/it-repair-email-logo-ku.png'
+        : (itRepairEmailLogoPreview ??
+          settings.it_repair_email_logo_url ??
+          '/image/it-repair-email-logo-ku.png');
+
+    const handleItRepairEmailLogoChange = (
+        e: React.ChangeEvent<HTMLInputElement>,
+    ) => {
+        const file = e.target.files?.[0] ?? null;
+        setItRepairEmailLogoFile(file);
+        setRemoveItRepairEmailLogo(false);
+    };
+
+    const handleRemoveItRepairEmailLogo = () => {
+        setItRepairEmailLogoFile(null);
+        setRemoveItRepairEmailLogo(true);
+
+        if (itRepairEmailLogoInputRef.current) {
+            itRepairEmailLogoInputRef.current.value = '';
+        }
+    };
+
     const handleSave = () => {
         setSaving(true);
         setErrors({});
@@ -405,13 +543,34 @@ export default function Index({
                 notify_network_wan_enabled: networkWanEnabled,
                 notify_certificate_enabled: certificateNotifyEnabled,
                 notify_certificate_check_time: certificateCheckTime,
+                notify_services_enabled: servicesEnabled,
+                notify_services_interval_minutes: servicesIntervalMinutes,
+                notify_services_emails: servicesEmails,
+                notify_services_telegram_enabled: servicesTelegramEnabled,
                 session_timeout_minutes: sessionTimeout,
                 disabled_pages: disabledPages,
                 room_temp_min_c: roomTempMin,
                 room_temp_max_c: roomTempMax,
                 room_humidity_min_pct: roomHumidityMin,
                 room_humidity_max_pct: roomHumidityMax,
-            },
+                it_repair_email_header: itRepairEmailHeader,
+                it_repair_email_subject: itRepairEmailSubject,
+                it_repair_email_body: itRepairEmailBody,
+                it_repair_email_footer: itRepairEmailFooter,
+                it_repair_email_logo: itRepairEmailLogoFile,
+                remove_it_repair_email_logo: removeItRepairEmailLogo,
+                it_repair_email_show_logo: itRepairEmailShowLogo,
+                it_repair_email_logo_width: itRepairEmailLogoWidth,
+                it_repair_email_heading_color: itRepairEmailHeadingColor,
+                it_repair_email_text_color: itRepairEmailTextColor,
+                it_repair_email_background_color: itRepairEmailBackgroundColor,
+                it_repair_email_layout: itRepairEmailLayout,
+                it_repair_email_content_width: itRepairEmailContentWidth,
+                // Inertia's FormDataConvertible constraint requires an
+                // explicit index signature, which the NotifyEmail rows in
+                // notify_services_emails don't structurally provide — the
+                // payload itself serializes fine as plain form data.
+            } as unknown as RequestPayload,
             {
                 forceFormData: true,
                 preserveScroll: true,
@@ -419,6 +578,8 @@ export default function Index({
                     notifySuccess('บันทึกการตั้งค่าสำเร็จ', 'บันทึกสำเร็จ');
                     setFaviconFile(null);
                     setRemoveFavicon(false);
+                    setItRepairEmailLogoFile(null);
+                    setRemoveItRepairEmailLogo(false);
                 },
                 onError: (formErrors) => {
                     setErrors(formErrors as Record<string, string>);
@@ -755,6 +916,36 @@ export default function Index({
                                 }
                             />
                             <NotificationRow
+                                title="Service Monitoring"
+                                description={
+                                    <>
+                                        A monitored systemd service (see the{' '}
+                                        <Link
+                                            href="/services"
+                                            className="underline underline-offset-2"
+                                        >
+                                            Services
+                                        </Link>{' '}
+                                        page) stops being active. Add/remove
+                                        which services to watch from that
+                                        page — this only controls the
+                                        alert.
+                                    </>
+                                }
+                                enabled={servicesEnabled}
+                                onEnabledChange={setServicesEnabled}
+                                scheduleControl={
+                                    <IntervalInput
+                                        value={servicesIntervalMinutes}
+                                        onChange={setServicesIntervalMinutes}
+                                        disabled={!servicesEnabled}
+                                    />
+                                }
+                                error={
+                                    errors.notify_services_interval_minutes
+                                }
+                            />
+                            <NotificationRow
                                 title="Daily Report"
                                 description="Sent as a PDF when a Daily Report is saved on the Daily Report page — always manual, not on a schedule."
                                 scheduleControl={
@@ -763,6 +954,132 @@ export default function Index({
                                     </span>
                                 }
                             />
+                        </div>
+
+                        <div className="space-y-3 rounded-lg border p-4">
+                            <div>
+                                <p className="text-sm font-medium">
+                                    Notify Email
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                    Recipients for the Service Monitoring
+                                    alert above. Add an address first, then
+                                    grant it permission to be notified —
+                                    only addresses with the toggle on
+                                    receive mail. Email is sent in addition
+                                    to Telegram, not instead of it.
+                                </p>
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="services-email">
+                                    Add email address
+                                </Label>
+                                <div className="flex gap-2">
+                                    <Input
+                                        id="services-email"
+                                        type="email"
+                                        placeholder="e.g. ops@example.com"
+                                        value={newServiceEmail}
+                                        disabled={!servicesEnabled}
+                                        onChange={(e) =>
+                                            setNewServiceEmail(e.target.value)
+                                        }
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                                addServiceEmail();
+                                            }
+                                        }}
+                                    />
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        disabled={
+                                            !servicesEnabled ||
+                                            !newServiceEmail.trim()
+                                        }
+                                        onClick={addServiceEmail}
+                                    >
+                                        <Plus className="mr-1 h-4 w-4" />
+                                        Add
+                                    </Button>
+                                </div>
+                                {errors.notify_services_emails && (
+                                    <p className="text-xs text-red-500">
+                                        {errors.notify_services_emails}
+                                    </p>
+                                )}
+                                {Object.entries(errors)
+                                    .filter(([key]) =>
+                                        key.startsWith(
+                                            'notify_services_emails.',
+                                        ),
+                                    )
+                                    .map(([key, message]) => (
+                                        <p
+                                            key={key}
+                                            className="text-xs text-red-500"
+                                        >
+                                            {message}
+                                        </p>
+                                    ))}
+                            </div>
+
+                            {servicesEmails.length === 0 ? (
+                                <p className="text-xs text-muted-foreground">
+                                    No addresses added — email notifications
+                                    are off. Telegram (below) still applies.
+                                </p>
+                            ) : (
+                                <ul className="divide-y rounded-md border">
+                                    {servicesEmails.map((row) => (
+                                        <li
+                                            key={row.email}
+                                            className="flex items-center justify-between gap-3 px-3 py-2"
+                                        >
+                                            <span className="min-w-0 flex-1 truncate text-sm">
+                                                {row.email}
+                                            </span>
+                                            <div className="flex shrink-0 items-center gap-3">
+                                                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                                                    Send notifications
+                                                    <ToggleSwitch
+                                                        checked={row.notify}
+                                                        onChange={(value) =>
+                                                            setServiceEmailNotify(
+                                                                row.email,
+                                                                value,
+                                                            )
+                                                        }
+                                                    />
+                                                </label>
+                                                <Button
+                                                    type="button"
+                                                    size="icon"
+                                                    variant="ghost"
+                                                    onClick={() =>
+                                                        removeServiceEmail(
+                                                            row.email,
+                                                        )
+                                                    }
+                                                >
+                                                    <Trash2 className="h-4 w-4 text-red-500" />
+                                                </Button>
+                                            </div>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+
+                            <div className="flex items-center justify-between">
+                                <span className="text-sm">
+                                    Also send via Telegram
+                                </span>
+                                <ToggleSwitch
+                                    checked={servicesTelegramEnabled}
+                                    onChange={setServicesTelegramEnabled}
+                                />
+                            </div>
                         </div>
 
                         <div className="flex flex-wrap gap-2">
@@ -804,6 +1121,461 @@ export default function Index({
                             , and a separate pair for the Daily Report), not
                             editable from this page.
                         </p>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader className="flex flex-row items-center gap-2 space-y-0">
+                        <div className="rounded-lg bg-indigo-100 p-2 dark:bg-indigo-900/30">
+                            <Mail className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                        </div>
+                        <CardTitle>IT Repair Notification Email</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <p className="text-sm text-muted-foreground">
+                            Content sent by the &quot;Send Email&quot; button
+                            on the{' '}
+                            <Link
+                                href="/it-repair"
+                                className="underline underline-offset-2"
+                            >
+                                IT Repair
+                            </Link>{' '}
+                            page — it emails the recipient who filed the
+                            request. Use these placeholders anywhere below
+                            and they&apos;ll be filled in per request:{' '}
+                            {[
+                                'full_name',
+                                'recipient_email',
+                                'contact_number',
+                                'service_type',
+                                'provider_name',
+                                'status_label',
+                                'details',
+                                'requested_at',
+                                'request_id',
+                                'tracking_link',
+                            ].map((token, i, arr) => (
+                                <span key={token}>
+                                    <code className="rounded bg-muted px-1 py-0.5">
+                                        {`{{${token}}}`}
+                                    </code>
+                                    {i < arr.length - 1 ? ', ' : ''}
+                                </span>
+                            ))}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                            The email body is plain text, not HTML — for{' '}
+                            <code className="rounded bg-muted px-1 py-0.5">
+                                {'{{tracking_link}}'}
+                            </code>{' '}
+                            just drop it in on its own, e.g. &quot;Track your
+                            request: {'{{tracking_link}}'}&quot;. Don&apos;t
+                            wrap it in an{' '}
+                            <code className="rounded bg-muted px-1 py-0.5">
+                                {'<a href>'}
+                            </code>{' '}
+                            tag — email clients turn a plain https:// link
+                            into a clickable one automatically, but literal
+                            HTML tags show up as text instead of a link.
+                        </p>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="repair-email-header">
+                                Header
+                            </Label>
+                            <Input
+                                id="repair-email-header"
+                                value={itRepairEmailHeader}
+                                onChange={(e) =>
+                                    setItRepairEmailHeader(e.target.value)
+                                }
+                                placeholder="IT Repair Request Update"
+                            />
+                            {errors.it_repair_email_header && (
+                                <p className="text-xs text-red-500">
+                                    {errors.it_repair_email_header}
+                                </p>
+                            )}
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="repair-email-subject">
+                                Subject
+                            </Label>
+                            <Input
+                                id="repair-email-subject"
+                                value={itRepairEmailSubject}
+                                onChange={(e) =>
+                                    setItRepairEmailSubject(e.target.value)
+                                }
+                                placeholder="IT Repair Request Update — {{full_name}}"
+                            />
+                            {errors.it_repair_email_subject && (
+                                <p className="text-xs text-red-500">
+                                    {errors.it_repair_email_subject}
+                                </p>
+                            )}
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="repair-email-body">
+                                Details
+                            </Label>
+                            <textarea
+                                id="repair-email-body"
+                                className="flex min-h-32 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                                value={itRepairEmailBody}
+                                onChange={(e) =>
+                                    setItRepairEmailBody(e.target.value)
+                                }
+                                placeholder={
+                                    'Hello {{full_name}},\n\nYour IT repair request is now: {{status_label}}.'
+                                }
+                            />
+                            {errors.it_repair_email_body && (
+                                <p className="text-xs text-red-500">
+                                    {errors.it_repair_email_body}
+                                </p>
+                            )}
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="repair-email-footer">
+                                Footer
+                            </Label>
+                            <textarea
+                                id="repair-email-footer"
+                                className="flex min-h-16 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                                value={itRepairEmailFooter}
+                                onChange={(e) =>
+                                    setItRepairEmailFooter(e.target.value)
+                                }
+                                placeholder="This is an automated message — please do not reply."
+                            />
+                            {errors.it_repair_email_footer && (
+                                <p className="text-xs text-red-500">
+                                    {errors.it_repair_email_footer}
+                                </p>
+                            )}
+                        </div>
+
+                        <div className="border-t pt-4">
+                            <p className="text-sm font-medium">
+                                Template design
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                                The logo, colours and layout of the email
+                                itself — everything wrapped around the text
+                                above.
+                            </p>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Logo</Label>
+                            <div className="flex items-center gap-4">
+                                <div
+                                    className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md border"
+                                    style={{
+                                        backgroundColor:
+                                            itRepairEmailBackgroundColor,
+                                    }}
+                                >
+                                    <img
+                                        src={currentItRepairEmailLogoUrl}
+                                        alt="Email logo preview"
+                                        className="max-h-full max-w-full object-contain"
+                                    />
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                    <input
+                                        ref={itRepairEmailLogoInputRef}
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={handleItRepairEmailLogoChange}
+                                    />
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() =>
+                                            itRepairEmailLogoInputRef.current?.click()
+                                        }
+                                    >
+                                        <Upload className="mr-2 h-4 w-4" />
+                                        Upload logo
+                                    </Button>
+                                    {(settings.it_repair_email_logo_url ||
+                                        itRepairEmailLogoFile) &&
+                                        !removeItRepairEmailLogo && (
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={
+                                                    handleRemoveItRepairEmailLogo
+                                                }
+                                            >
+                                                <Trash2 className="mr-2 h-4 w-4" />
+                                                Use default KU logo
+                                            </Button>
+                                        )}
+                                </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                                PNG or JPG, up to 1 MB. Leave unset to use the
+                                bundled Kasetsart University logo.
+                            </p>
+                            {errors.it_repair_email_logo && (
+                                <p className="text-xs text-red-500">
+                                    {errors.it_repair_email_logo}
+                                </p>
+                            )}
+                        </div>
+
+                        <div className="flex items-center justify-between rounded-lg border p-3">
+                            <div>
+                                <p className="text-sm font-medium">
+                                    Show the logo in the email
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                    Turn off for a plain, logo-free message.
+                                </p>
+                            </div>
+                            <ToggleSwitch
+                                id="repair-email-show-logo"
+                                checked={itRepairEmailShowLogo}
+                                onChange={setItRepairEmailShowLogo}
+                            />
+                        </div>
+
+                        {itRepairEmailShowLogo && (
+                            <div className="space-y-2">
+                                <Label htmlFor="repair-email-logo-width">
+                                    Logo width (px)
+                                </Label>
+                                <Input
+                                    id="repair-email-logo-width"
+                                    type="number"
+                                    min={16}
+                                    max={400}
+                                    className="max-w-[8rem]"
+                                    value={itRepairEmailLogoWidth}
+                                    onChange={(e) =>
+                                        setItRepairEmailLogoWidth(
+                                            Number(e.target.value),
+                                        )
+                                    }
+                                />
+                                {errors.it_repair_email_logo_width && (
+                                    <p className="text-xs text-red-500">
+                                        {errors.it_repair_email_logo_width}
+                                    </p>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="grid gap-4 sm:grid-cols-3">
+                            {(
+                                [
+                                    {
+                                        id: 'repair-email-heading-color',
+                                        label: 'Heading colour',
+                                        value: itRepairEmailHeadingColor,
+                                        set: setItRepairEmailHeadingColor,
+                                        error: errors.it_repair_email_heading_color,
+                                    },
+                                    {
+                                        id: 'repair-email-text-color',
+                                        label: 'Body text colour',
+                                        value: itRepairEmailTextColor,
+                                        set: setItRepairEmailTextColor,
+                                        error: errors.it_repair_email_text_color,
+                                    },
+                                    {
+                                        id: 'repair-email-bg-color',
+                                        label: 'Background colour',
+                                        value: itRepairEmailBackgroundColor,
+                                        set: setItRepairEmailBackgroundColor,
+                                        error: errors.it_repair_email_background_color,
+                                    },
+                                ] as const
+                            ).map((c) => (
+                                <div key={c.id} className="space-y-2">
+                                    <Label htmlFor={c.id}>{c.label}</Label>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            id={c.id}
+                                            type="color"
+                                            className="h-9 w-10 shrink-0 cursor-pointer rounded border border-input bg-transparent p-1"
+                                            value={c.value}
+                                            onChange={(e) =>
+                                                c.set(e.target.value)
+                                            }
+                                        />
+                                        <Input
+                                            aria-label={`${c.label} hex`}
+                                            className="font-mono"
+                                            value={c.value}
+                                            onChange={(e) =>
+                                                c.set(e.target.value)
+                                            }
+                                            placeholder="#000000"
+                                        />
+                                    </div>
+                                    {c.error && (
+                                        <p className="text-xs text-red-500">
+                                            {c.error}
+                                        </p>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="grid gap-4 sm:grid-cols-2">
+                            <div className="space-y-2">
+                                <Label htmlFor="repair-email-layout">
+                                    Layout
+                                </Label>
+                                <Select
+                                    value={itRepairEmailLayout}
+                                    onValueChange={(v) =>
+                                        setItRepairEmailLayout(
+                                            v as 'full' | 'centered',
+                                        )
+                                    }
+                                >
+                                    <SelectTrigger id="repair-email-layout">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="full">
+                                            Full width (fills the reading pane)
+                                        </SelectItem>
+                                        <SelectItem value="centered">
+                                            Centred column
+                                        </SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                {errors.it_repair_email_layout && (
+                                    <p className="text-xs text-red-500">
+                                        {errors.it_repair_email_layout}
+                                    </p>
+                                )}
+                            </div>
+
+                            {itRepairEmailLayout === 'centered' && (
+                                <div className="space-y-2">
+                                    <Label htmlFor="repair-email-content-width">
+                                        Column width (px)
+                                    </Label>
+                                    <Input
+                                        id="repair-email-content-width"
+                                        type="number"
+                                        min={320}
+                                        max={1200}
+                                        value={itRepairEmailContentWidth}
+                                        onChange={(e) =>
+                                            setItRepairEmailContentWidth(
+                                                Number(e.target.value),
+                                            )
+                                        }
+                                    />
+                                    {errors.it_repair_email_content_width && (
+                                        <p className="text-xs text-red-500">
+                                            {
+                                                errors.it_repair_email_content_width
+                                            }
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Preview</Label>
+                            <div
+                                className="overflow-hidden rounded-lg border"
+                                style={{
+                                    backgroundColor:
+                                        itRepairEmailBackgroundColor,
+                                }}
+                            >
+                                <div
+                                    style={{
+                                        padding: '32px 28px',
+                                        margin:
+                                            itRepairEmailLayout === 'centered'
+                                                ? '0 auto'
+                                                : undefined,
+                                        maxWidth:
+                                            itRepairEmailLayout === 'centered'
+                                                ? `${itRepairEmailContentWidth}px`
+                                                : undefined,
+                                    }}
+                                >
+                                    {itRepairEmailShowLogo && (
+                                        <img
+                                            src={currentItRepairEmailLogoUrl}
+                                            alt="Kasetsart University"
+                                            style={{
+                                                display: 'block',
+                                                width: `${itRepairEmailLogoWidth}px`,
+                                                height: 'auto',
+                                                marginBottom: '24px',
+                                            }}
+                                        />
+                                    )}
+                                    <div
+                                        style={{
+                                            margin: '0 0 16px',
+                                            fontSize: '18px',
+                                            fontWeight: 700,
+                                            lineHeight: 1.4,
+                                            color: itRepairEmailHeadingColor,
+                                        }}
+                                    >
+                                        {itRepairEmailHeader ||
+                                            'IT Repair Request Update'}
+                                    </div>
+                                    <div
+                                        style={{
+                                            whiteSpace: 'pre-wrap',
+                                            fontSize: '14px',
+                                            lineHeight: 1.6,
+                                            color: itRepairEmailTextColor,
+                                        }}
+                                    >
+                                        {itRepairEmailBody ||
+                                            'Hello {{full_name}}, your IT repair request is now: {{status_label}}.'}
+                                    </div>
+                                    {itRepairEmailFooter.trim() !== '' && (
+                                        <div
+                                            style={{
+                                                marginTop: '28px',
+                                                paddingTop: '16px',
+                                                borderTop: '1px solid #e4e4e7',
+                                                fontSize: '12px',
+                                                lineHeight: 1.5,
+                                                color: '#71717a',
+                                                whiteSpace: 'pre-wrap',
+                                            }}
+                                        >
+                                            {itRepairEmailFooter}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                                Placeholders like{' '}
+                                <code className="rounded bg-muted px-1 py-0.5">
+                                    {'{{full_name}}'}
+                                </code>{' '}
+                                are shown literally here — they&apos;re filled
+                                in per request when the email is sent.
+                            </p>
+                        </div>
                     </CardContent>
                 </Card>
 

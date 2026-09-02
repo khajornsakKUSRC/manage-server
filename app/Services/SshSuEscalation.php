@@ -8,9 +8,8 @@ use RuntimeException;
 /**
  * Runs one command as root over an interactive `su -` shell, for hosts
  * where direct root SSH login is disabled — the case on most of this
- * network's Linux fleet, not just the KUWIN Radius server this was first
- * built for. Shared by GuestSshService, ModSecurityLogService, and
- * RadiusLogService.
+ * network's Linux fleet. Shared by GuestSshService and
+ * ModSecurityLogService.
  */
 class SshSuEscalation
 {

@@ -7,17 +7,21 @@ Route::redirect('/', '/login')->name('home');
 use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\AlarmController;
 use App\Http\Controllers\ApplianceController;
+use App\Http\Controllers\CalendarNoticeController;
 use App\Http\Controllers\CertificateExpirationController;
 use App\Http\Controllers\DailyReportController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatastoreController;
 use App\Http\Controllers\EnvironmentController;
-use App\Http\Controllers\ModSecurityController;
 use App\Http\Controllers\HostController;
+use App\Http\Controllers\ItRepairController;
+use App\Http\Controllers\ModSecurityController;
 use App\Http\Controllers\NetworkMapController;
 use App\Http\Controllers\NetworkMonitorController;
 use App\Http\Controllers\PerformanceController;
-use App\Http\Controllers\RadiusController;
+use App\Http\Controllers\RoleController;
+use App\Http\Controllers\ServiceController;
+use App\Http\Controllers\ServiceEvaluationController;
 use App\Http\Controllers\SmartDetectionController;
 use App\Http\Controllers\SystemSettingController;
 use App\Http\Controllers\UserController;
@@ -31,6 +35,22 @@ use App\Http\Controllers\VsphereController;
 Route::post('api/environment/readings', [EnvironmentController::class, 'ingest'])
     ->middleware('throttle:60,1')
     ->name('environment.ingest');
+
+// Public, login-free IT repair request form — anyone on the network can
+// file a request without an account. Staff triage them and set the status
+// from the authed /it-repair page.
+Route::get('it-repair/new', [ItRepairController::class, 'create'])->name('it-repair.create');
+Route::post('it-repair/new', [ItRepairController::class, 'publicStore'])
+    ->middleware('throttle:20,1')
+    ->name('it-repair.public-store');
+// Public status lookup by the recipient's own email address.
+Route::get('it-repair/track', [ItRepairController::class, 'track'])
+    ->middleware('throttle:30,1')
+    ->name('it-repair.track');
+// The recipient rates a resolved request from the public tracker.
+Route::post('it-repair/track/{itRepairRequest}/evaluation', [ItRepairController::class, 'publicEvaluate'])
+    ->middleware('throttle:20,1')
+    ->name('it-repair.track.evaluate');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('page:dashboard')->group(function () {
@@ -63,6 +83,34 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('daily-reports/pull', [DailyReportController::class, 'pull'])->name('daily-reports.pull');
         Route::post('daily-reports', [DailyReportController::class, 'store'])->name('daily-reports.store');
         Route::get('daily-reports/export', [DailyReportController::class, 'export'])->name('daily-reports.export');
+    });
+
+    Route::middleware('page:calendar-notice')->group(function () {
+        Route::get('calendar-notice', [CalendarNoticeController::class, 'index'])->name('calendar-notice.index');
+        Route::post('calendar-notice', [CalendarNoticeController::class, 'store'])->name('calendar-notice.store');
+        Route::put('calendar-notice/{calendarNotice}', [CalendarNoticeController::class, 'update'])->name('calendar-notice.update');
+        Route::delete('calendar-notice/{calendarNotice}', [CalendarNoticeController::class, 'destroy'])->name('calendar-notice.destroy');
+    });
+
+    Route::middleware('page:it-repair')->group(function () {
+        Route::get('it-repair', [ItRepairController::class, 'index'])->name('it-repair.index');
+        Route::post('it-repair', [ItRepairController::class, 'store'])->name('it-repair.store');
+        Route::put('it-repair/{itRepairRequest}', [ItRepairController::class, 'update'])->name('it-repair.update');
+        Route::patch('it-repair/{itRepairRequest}/status', [ItRepairController::class, 'updateStatus'])->name('it-repair.status');
+        Route::delete('it-repair/{itRepairRequest}', [ItRepairController::class, 'destroy'])->name('it-repair.destroy');
+        Route::post('it-repair/{itRepairRequest}/evaluation', [ItRepairController::class, 'storeEvaluation'])->name('it-repair.evaluation.store');
+        Route::post('it-repair/{itRepairRequest}/send-email', [ItRepairController::class, 'sendEmail'])->name('it-repair.send-email');
+        Route::post('it-repair/service-types', [ItRepairController::class, 'storeType'])->name('it-repair.service-types.store');
+        Route::put('it-repair/service-types/{itRepairServiceType}', [ItRepairController::class, 'updateType'])->name('it-repair.service-types.update');
+        Route::delete('it-repair/service-types/{itRepairServiceType}', [ItRepairController::class, 'destroyType'])->name('it-repair.service-types.destroy');
+    });
+
+    Route::middleware('page:it-repair-evaluation')->group(function () {
+        Route::get('it-repair-evaluation', [ServiceEvaluationController::class, 'index'])->name('it-repair-evaluation.index');
+        Route::get('it-repair-evaluation/export', [ServiceEvaluationController::class, 'export'])->name('it-repair-evaluation.export');
+        Route::post('it-repair-evaluation/criteria', [ServiceEvaluationController::class, 'storeCriterion'])->name('it-repair-evaluation.criteria.store');
+        Route::put('it-repair-evaluation/criteria/{itRepairEvalCriterion}', [ServiceEvaluationController::class, 'updateCriterion'])->name('it-repair-evaluation.criteria.update');
+        Route::delete('it-repair-evaluation/criteria/{itRepairEvalCriterion}', [ServiceEvaluationController::class, 'destroyCriterion'])->name('it-repair-evaluation.criteria.destroy');
     });
 
     Route::middleware('page:alarms')->group(function () {
@@ -109,10 +157,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('api/modsecurity/logs', [ModSecurityController::class, 'logs'])->name('modsecurity.logs');
     });
 
-    Route::middleware('page:kuwin-radius')->group(function () {
-        Route::get('kuwin-radius', [RadiusController::class, 'index'])->name('kuwin-radius.index');
-        Route::get('api/kuwin-radius/logs', [RadiusController::class, 'logs'])->name('kuwin-radius.logs');
-        Route::get('kuwin-radius/export', [RadiusController::class, 'export'])->name('kuwin-radius.export');
+    Route::middleware('page:services')->group(function () {
+        Route::get('services', [ServiceController::class, 'index'])->name('services.index');
+        Route::get('api/services/statuses', [ServiceController::class, 'statuses'])->name('services.statuses');
+        Route::post('services', [ServiceController::class, 'store'])->name('services.store');
+        Route::put('services/{service}', [ServiceController::class, 'update'])->name('services.update');
+        Route::delete('services/{service}', [ServiceController::class, 'destroy'])->name('services.destroy');
     });
 
     // User management and the Activity Log (every user's actions + IPs) are
@@ -120,6 +170,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // than grantable pages.
     Route::middleware('admin')->group(function () {
         Route::get('users/online-status', [UserController::class, 'onlineStatus'])->name('users.online-status');
+        // Registered before the users resource so "users/roles" isn't
+        // swallowed by the users/{user} route-model binding.
+        Route::get('users/roles', [RoleController::class, 'index'])->name('roles.index');
+        Route::post('users/roles', [RoleController::class, 'store'])->name('roles.store');
+        Route::put('users/roles/{role}', [RoleController::class, 'update'])->name('roles.update');
+        Route::delete('users/roles/{role}', [RoleController::class, 'destroy'])->name('roles.destroy');
         Route::resource('users', UserController::class)->except(['show']);
         Route::get('activity-log', [ActivityLogController::class, 'index'])->name('activity-log.index');
         Route::get('system-settings', [SystemSettingController::class, 'index'])->name('system-settings.index');

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Concerns\PasswordValidationRules;
 use App\Concerns\ProfileValidationRules;
+use App\Models\Role;
 use App\Models\User;
 use App\Services\ActivityLogger;
 use App\Support\Permissions;
@@ -23,7 +24,8 @@ class UserController extends Controller
     public function index(): Response
     {
         return Inertia::render('users/index', [
-            'users' => User::orderBy('name')
+            'users' => User::with('roles:id,name,color')
+                ->orderBy('name')
                 ->get(['id', 'name', 'email', 'is_admin', 'permissions', 'created_at', 'last_seen_at'])
                 ->map(fn (User $user) => [
                     'id' => $user->id,
@@ -31,6 +33,11 @@ class UserController extends Controller
                     'email' => $user->email,
                     'is_admin' => $user->is_admin,
                     'permissions' => $user->permissions,
+                    'roles' => $user->roles->map(fn (Role $role) => [
+                        'id' => $role->id,
+                        'name' => $role->name,
+                        'color' => $role->color,
+                    ]),
                     'created_at' => $user->created_at,
                     'is_online' => $user->isOnline(),
                 ]),
@@ -54,7 +61,8 @@ class UserController extends Controller
     public function create(): Response
     {
         return Inertia::render('users/create', [
-            'pages' => Permissions::PAGES,
+            'pages' => Permissions::withDescriptions(),
+            'roles' => Role::orderBy('name')->get(['id', 'name', 'description', 'color']),
         ]);
     }
 
@@ -66,6 +74,8 @@ class UserController extends Controller
             'is_admin' => ['boolean'],
             'permissions' => ['array'],
             'permissions.*' => [Rule::in(Permissions::keys())],
+            'roles' => ['array'],
+            'roles.*' => ['integer', Rule::exists('roles', 'id')],
         ]);
 
         $user = User::create([
@@ -75,6 +85,8 @@ class UserController extends Controller
             'is_admin' => $validated['is_admin'] ?? false,
             'permissions' => $validated['permissions'] ?? [],
         ]);
+
+        $user->roles()->sync($validated['roles'] ?? []);
 
         $activityLogger->record(
             action: 'created',
@@ -89,8 +101,12 @@ class UserController extends Controller
     public function edit(User $user): Response
     {
         return Inertia::render('users/edit', [
-            'user' => $user->only(['id', 'name', 'email', 'is_admin', 'permissions']),
-            'pages' => Permissions::PAGES,
+            'user' => [
+                ...$user->only(['id', 'name', 'email', 'is_admin', 'permissions']),
+                'roles' => $user->roles()->pluck('roles.id'),
+            ],
+            'pages' => Permissions::withDescriptions(),
+            'roles' => Role::orderBy('name')->get(['id', 'name', 'description', 'color']),
             'isSelf' => $user->id === Auth::id(),
         ]);
     }
@@ -103,6 +119,8 @@ class UserController extends Controller
             'is_admin' => ['boolean'],
             'permissions' => ['array'],
             'permissions.*' => [Rule::in(Permissions::keys())],
+            'roles' => ['array'],
+            'roles.*' => ['integer', Rule::exists('roles', 'id')],
         ]);
 
         $user->fill([
@@ -122,6 +140,7 @@ class UserController extends Controller
         }
 
         $user->save();
+        $user->roles()->sync($validated['roles'] ?? []);
 
         $activityLogger->record(
             action: 'updated',

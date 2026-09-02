@@ -28,6 +28,13 @@ Schedule::command('network-monitors:check')->everyMinute()->withoutOverlapping()
 // 24h of history is enough buffer.
 Schedule::command('network-monitors:prune')->dailyAt('00:10');
 
+// Fires the Telegram reminder for each Calendar Notice whose remind_at
+// has passed. Every minute so a reminder lands within ~60s of its set
+// time; it's a single indexed query plus a Telegram call only when
+// something is actually due, so cost is negligible. withoutOverlapping()
+// in case a slow Telegram round-trip outlasts the minute.
+Schedule::command('calendar-notices:notify')->everyMinute()->withoutOverlapping();
+
 // The schedules below read their cadence/enabled state from Settings →
 // Telegram Notifications, re-evaluated fresh on every artisan boot (this
 // file loads on every console invocation, and SystemSetting::current() is
@@ -46,6 +53,16 @@ $alarmsIntervalMinutes = $notificationSettings?->notify_alarms_interval_minutes 
 $smartDetectionIntervalMinutes = $notificationSettings?->notify_smart_detection_interval_minutes ?? 15;
 $certificateEnabled = $notificationSettings?->notify_certificate_enabled ?? true;
 $certificateCheckTime = $notificationSettings?->notify_certificate_check_time ?? '08:00';
+$servicesEnabled = $notificationSettings?->notify_services_enabled ?? true;
+$servicesIntervalMinutes = $notificationSettings?->notify_services_interval_minutes ?? 20;
+
+// Master off-switch for the two schedules that SSH into the VM fleet
+// (smart-detection:scan, services:check). Set FLEET_SSH_SCANS_ENABLED=false
+// on a machine where you don't want the scheduler logging into every host
+// every few minutes — a dev box running Herd's per-site scheduler, say.
+// Left true/unset in production. env() rather than config() is deliberate:
+// this file is not config-cached and is re-read on every artisan boot.
+$fleetSshScansEnabled = filter_var(env('FLEET_SSH_SCANS_ENABLED', true), FILTER_VALIDATE_BOOLEAN);
 
 // Polls vCenter for newly triggered alarms and down/powered-off VMs,
 // Telegram-notifying on each one not already sent. Settings → Telegram
@@ -73,17 +90,19 @@ if ($alarmsEnabled) {
 // reachable — e.g. Windows VMs, or ones without the shared guest_ssh
 // credential) to run Smart Detection's five checks, storing findings for
 // the Smart Detection page and Telegram-notifying on each new/reopened
-// warning-or-critical one. Always runs on its configured interval — the
-// Smart Detection page's data depends on it — Settings → Telegram
-// Notifications → Smart Detection's "enabled" toggle only mutes the
-// Telegram alert inside the command, not the scan itself.
-// runInBackground() since with enough VMs (each SSH attempt has its own
-// ~10s connect timeout) this could otherwise run for several minutes and
-// block everything queued after it.
-Schedule::command('smart-detection:scan')
-    ->cron("*/{$smartDetectionIntervalMinutes} * * * *")
-    ->withoutOverlapping()
-    ->runInBackground();
+// warning-or-critical one. Runs on its configured interval whenever
+// FLEET_SSH_SCANS_ENABLED isn't false — the Smart Detection page's data
+// depends on it — Settings → Telegram Notifications → Smart Detection's
+// "enabled" toggle only mutes the Telegram alert inside the command, not
+// the scan itself. runInBackground() since with enough VMs (each SSH
+// attempt has its own ~10s connect timeout) this could otherwise run for
+// several minutes and block everything queued after it.
+if ($fleetSshScansEnabled) {
+    Schedule::command('smart-detection:scan')
+        ->cron("*/{$smartDetectionIntervalMinutes} * * * *")
+        ->withoutOverlapping()
+        ->runInBackground();
+}
 
 // Warns about VM certificates expiring soon — the window is Settings →
 // Monitoring Thresholds → Certificate Expiration Warning (days); Settings
@@ -92,6 +111,21 @@ Schedule::command('smart-detection:scan')
 if ($certificateEnabled) {
     Schedule::command('certificates:notify-telegram')
         ->dailyAt($certificateCheckTime)
+        ->withoutOverlapping()
+        ->runInBackground();
+}
+
+// One SSH round-trip per monitored host (batched — `systemctl show` for
+// every unit on that host at once), Telegram/email-notifying (per
+// Settings → Telegram Notifications → Service Monitoring) on each one
+// down and not already notified. Also persists last-known status onto
+// each monitored_services row, which is what the Services page renders —
+// the page only does its own live check when the user hits "Refresh".
+// runInBackground()/withoutOverlapping() for the same reasons as the
+// other SSH-based checks above.
+if ($servicesEnabled && $fleetSshScansEnabled) {
+    Schedule::command('services:check')
+        ->cron("*/{$servicesIntervalMinutes} * * * *")
         ->withoutOverlapping()
         ->runInBackground();
 }

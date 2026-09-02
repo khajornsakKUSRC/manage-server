@@ -12,7 +12,25 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-export default function Create({ pages }: { pages: Record<string, string> }) {
+interface PageMeta {
+    label: string;
+    description: string;
+}
+
+interface RoleOption {
+    id: number;
+    name: string;
+    description: string | null;
+    color: string;
+}
+
+export default function Create({
+    pages,
+    roles,
+}: {
+    pages: Record<string, PageMeta>;
+    roles: RoleOption[];
+}) {
     const { data, setData, post, processing, errors } = useForm({
         name: '',
         email: '',
@@ -20,6 +38,7 @@ export default function Create({ pages }: { pages: Record<string, string> }) {
         password_confirmation: '',
         is_admin: false,
         permissions: Object.keys(pages),
+        roles: [] as number[],
     });
 
     const submit = (e: React.FormEvent) => {
@@ -33,6 +52,15 @@ export default function Create({ pages }: { pages: Record<string, string> }) {
             checked
                 ? [...data.permissions, key]
                 : data.permissions.filter((p) => p !== key),
+        );
+    };
+
+    const toggleRole = (id: number, checked: boolean) => {
+        setData(
+            'roles',
+            checked
+                ? [...data.roles, id]
+                : data.roles.filter((r) => r !== id),
         );
     };
 
@@ -161,20 +189,95 @@ export default function Create({ pages }: { pages: Record<string, string> }) {
                             </div>
 
                             <div className="space-y-2">
-                                <Label>Page Access</Label>
+                                <div className="flex items-center justify-between">
+                                    <Label>Role</Label>
+                                    <Link
+                                        href="/users/roles"
+                                        className="text-xs text-muted-foreground underline underline-offset-2"
+                                    >
+                                        Manage roles
+                                    </Link>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                    What this person manages. Leave every box
+                                    unticked for a general user — roles are a
+                                    label and don&apos;t change page access.
+                                </p>
+                                {roles.length === 0 ? (
+                                    <p className="text-sm text-muted-foreground">
+                                        No roles defined yet.{' '}
+                                        <Link
+                                            href="/users/roles"
+                                            className="underline underline-offset-2"
+                                        >
+                                            Add one
+                                        </Link>
+                                        .
+                                    </p>
+                                ) : (
+                                    <div className="grid gap-2 sm:grid-cols-2">
+                                        {roles.map((role) => (
+                                            <label
+                                                key={role.id}
+                                                htmlFor={`role-${role.id}`}
+                                                className="flex cursor-pointer items-start gap-2 rounded-lg border p-3"
+                                            >
+                                                <Checkbox
+                                                    id={`role-${role.id}`}
+                                                    checked={data.roles.includes(
+                                                        role.id,
+                                                    )}
+                                                    onCheckedChange={(checked) =>
+                                                        toggleRole(
+                                                            role.id,
+                                                            checked === true,
+                                                        )
+                                                    }
+                                                />
+                                                <span>
+                                                    <span className="flex items-center gap-1.5 text-sm font-medium">
+                                                        <span
+                                                            className="h-2 w-2 rounded-full"
+                                                            style={{
+                                                                backgroundColor:
+                                                                    role.color,
+                                                            }}
+                                                        />
+                                                        {role.name}
+                                                    </span>
+                                                    {role.description && (
+                                                        <span className="mt-0.5 block text-xs text-muted-foreground">
+                                                            {role.description}
+                                                        </span>
+                                                    )}
+                                                </span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                )}
+                                {errors.roles && (
+                                    <p className="text-sm text-red-500">
+                                        {errors.roles}
+                                    </p>
+                                )}
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label>Permission Menu</Label>
                                 <p className="text-xs text-muted-foreground">
                                     {data.is_admin
                                         ? 'Administrators have access to every page automatically.'
-                                        : 'Choose which pages this user can open.'}
+                                        : 'Tick the menus this user can open — the note under each says what information it exposes.'}
                                 </p>
                                 <div
                                     className={`grid gap-2 sm:grid-cols-2 ${data.is_admin ? 'opacity-50' : ''}`}
                                 >
                                     {Object.entries(pages).map(
-                                        ([key, label]) => (
-                                            <div
+                                        ([key, meta]) => (
+                                            <label
                                                 key={key}
-                                                className="flex items-center gap-2 rounded-lg border p-3"
+                                                htmlFor={`permission-${key}`}
+                                                className="flex cursor-pointer items-start gap-2 rounded-lg border p-3"
                                             >
                                                 <Checkbox
                                                     id={`permission-${key}`}
@@ -194,13 +297,17 @@ export default function Create({ pages }: { pages: Record<string, string> }) {
                                                         )
                                                     }
                                                 />
-                                                <Label
-                                                    htmlFor={`permission-${key}`}
-                                                    className="font-normal"
-                                                >
-                                                    {label}
-                                                </Label>
-                                            </div>
+                                                <span>
+                                                    <span className="block text-sm font-medium">
+                                                        {meta.label}
+                                                    </span>
+                                                    {meta.description && (
+                                                        <span className="mt-0.5 block text-xs text-muted-foreground">
+                                                            {meta.description}
+                                                        </span>
+                                                    )}
+                                                </span>
+                                            </label>
                                         ),
                                     )}
                                 </div>

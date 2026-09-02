@@ -4,12 +4,19 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
+interface UserRole {
+    id: number;
+    name: string;
+    color: string;
+}
+
 interface UserRow {
     id: number;
     name: string;
     email: string;
     is_admin: boolean;
     permissions: string[] | null;
+    roles: UserRole[];
     created_at: string;
     is_online: boolean;
 }
@@ -80,9 +87,14 @@ export default function Index({
             <div className="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
                 <div className="mb-4 flex items-center justify-between">
                     <h1 className="text-2xl font-bold">Manage Users</h1>
-                    <Button asChild>
-                        <Link href="/users/create">Add User</Link>
-                    </Button>
+                    <div className="flex gap-2">
+                        <Button variant="outline" asChild>
+                            <Link href="/users/roles">Manage Roles</Link>
+                        </Button>
+                        <Button asChild>
+                            <Link href="/users/create">Add User</Link>
+                        </Button>
+                    </div>
                 </div>
 
                 <Card>
@@ -107,6 +119,9 @@ export default function Index({
                                             </th>
                                             <th className="px-4 py-2 font-medium">
                                                 Email
+                                            </th>
+                                            <th className="px-4 py-2 font-medium">
+                                                Role
                                             </th>
                                             <th className="px-4 py-2 font-medium">
                                                 Access
@@ -136,6 +151,42 @@ export default function Index({
                                                 </td>
                                                 <td className="px-4 py-3">
                                                     {user.email}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    {(user.roles ?? []).length ===
+                                                    0 ? (
+                                                        <span className="text-xs text-muted-foreground">
+                                                            General user
+                                                        </span>
+                                                    ) : (
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {user.roles.map(
+                                                                (role) => (
+                                                                    <span
+                                                                        key={
+                                                                            role.id
+                                                                        }
+                                                                        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+                                                                        style={{
+                                                                            backgroundColor: `${role.color}22`,
+                                                                            color: role.color,
+                                                                        }}
+                                                                    >
+                                                                        <span
+                                                                            className="h-1.5 w-1.5 rounded-full"
+                                                                            style={{
+                                                                                backgroundColor:
+                                                                                    role.color,
+                                                                            }}
+                                                                        />
+                                                                        {
+                                                                            role.name
+                                                                        }
+                                                                    </span>
+                                                                ),
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </td>
                                                 <td className="px-4 py-3">
                                                     {user.is_admin ? (

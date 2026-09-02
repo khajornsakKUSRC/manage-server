@@ -6,7 +6,9 @@ namespace App\Models;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
@@ -22,6 +24,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property string $password
  * @property bool $is_admin
  * @property array<int, string>|null $permissions
+ * @property Collection<int, Role> $roles
  * @property string|null $two_factor_secret
  * @property string|null $two_factor_recovery_codes
  * @property Carbon|null $two_factor_confirmed_at
@@ -68,6 +71,17 @@ class User extends Authenticatable implements PasskeyUser
     public function canAccess(string $page): bool
     {
         return $this->is_admin || in_array($page, $this->permissions ?? [], true);
+    }
+
+    /**
+     * Descriptive "what they manage" labels — Network, Server, etc. No
+     * bearing on access (see canAccess); a user with none is a general user.
+     *
+     * @return BelongsToMany<Role, $this>
+     */
+    public function roles(): BelongsToMany
+    {
+        return $this->belongsToMany(Role::class);
     }
 
     public function isOnline(): bool

@@ -50,14 +50,13 @@ return [
         'password' => env('GUEST_SSH_PASSWORD'),
         'port' => env('GUEST_SSH_PORT', 22),
         // Fallback for hosts where direct root login above is rejected —
-        // confirmed to be the case on most of this network's Linux fleet,
-        // not just the KUWIN Radius server this was first built for (root
-        // SSH login is disabled; a regular account + `su -` is required
-        // instead). Reuses the RADIUS_* variables since it's the same
-        // shared account/policy across the network — see SshSuEscalation.
-        'fallback_username' => env('RADIUS_SSH_USERNAME'),
-        'fallback_password' => env('RADIUS_SSH_PASSWORD'),
-        'su_password' => env('RADIUS_SU_PASSWORD'),
+        // confirmed to be the case on most of this network's Linux fleet
+        // (root SSH login is disabled; a regular account + `su -` is
+        // required instead). One shared account/policy across the
+        // network — see SshSuEscalation.
+        'fallback_username' => env('SSH_FALLBACK_USERNAME'),
+        'fallback_password' => env('SSH_FALLBACK_PASSWORD'),
+        'su_password' => env('SSH_FALLBACK_SU_PASSWORD'),
     ],
 
     'telegram' => [
@@ -76,24 +75,6 @@ return [
     // which case every ingest request is rejected.
     'environment_sensor' => [
         'token' => env('ENVIRONMENT_SENSOR_TOKEN'),
-    ],
-
-    // The KUWIN Radius page reads /var/log/radius/radius.log from this host
-    // over SSH. It's a dedicated box outside the regular VM fleet Smart
-    // Detection/ModSecurity SSH into, so it very likely needs its own
-    // login rather than the shared guest_ssh credential above — set
-    // RADIUS_SSH_USERNAME/PASSWORD to override; left blank, it falls back
-    // to GUEST_SSH_USERNAME/PASSWORD in case they do happen to work here.
-    'radius' => [
-        'host' => env('RADIUS_SERVER_HOST', '158.108.96.18'),
-        'ssh_username' => env('RADIUS_SSH_USERNAME'),
-        'ssh_password' => env('RADIUS_SSH_PASSWORD'),
-        'ssh_port' => env('RADIUS_SSH_PORT', 22),
-        // The SSH login above (a regular user) can't read radius.log
-        // directly — the same "su -" root password used manually is
-        // needed to escalate over an interactive shell. Left blank, the
-        // page fails with a clear message instead of silently trying.
-        'su_password' => env('RADIUS_SU_PASSWORD'),
     ],
 
 ];

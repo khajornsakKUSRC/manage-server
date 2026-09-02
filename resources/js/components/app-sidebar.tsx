@@ -2,6 +2,7 @@ import { Link, usePage } from '@inertiajs/react';
 import {
     Activity,
     BellRing,
+    CalendarClock,
     Database,
     History,
     LayoutGrid,
@@ -9,14 +10,16 @@ import {
     Map,
     Network,
     Radar,
-    Radio,
     Server,
+    ServerCog,
     Monitor,
     ClipboardList,
     Settings,
     ShieldAlert,
     ShieldCheck,
+    Star,
     Users,
+    Wrench,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import AppLogo from '@/components/app-logo';
@@ -77,6 +80,24 @@ const mainNavItems: PermissionedNavItem[] = [
         permission: 'daily-reports',
     },
     {
+        title: 'Calendar Notice',
+        href: '/calendar-notice',
+        icon: CalendarClock,
+        permission: 'calendar-notice',
+    },
+    {
+        title: 'IT Repair',
+        href: '/it-repair',
+        icon: Wrench,
+        permission: 'it-repair',
+    },
+    {
+        title: 'Service Evaluation',
+        href: '/it-repair-evaluation',
+        icon: Star,
+        permission: 'it-repair-evaluation',
+    },
+    {
         title: 'Alarm Notification',
         href: '/alarms',
         icon: BellRing,
@@ -119,10 +140,10 @@ const mainNavItems: PermissionedNavItem[] = [
         permission: 'modsecurity',
     },
     {
-        title: 'KUWIN Radius',
-        href: '/kuwin-radius',
-        icon: Radio,
-        permission: 'kuwin-radius',
+        title: 'Services',
+        href: '/services',
+        icon: ServerCog,
+        permission: 'services',
     },
     {
         title: 'Manage Users',
