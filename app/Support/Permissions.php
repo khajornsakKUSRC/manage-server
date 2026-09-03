@@ -28,6 +28,7 @@ final class Permissions
         'smart-detection' => 'Smart Detection',
         'modsecurity' => 'Mod Security',
         'services' => 'Services',
+        'it-assets' => 'ครุภัณฑ์ไอที',
     ];
 
     /**
@@ -55,6 +56,7 @@ final class Permissions
         'smart-detection' => 'Smart-detection events and anomaly notifications raised by the monitoring stack.',
         'modsecurity' => 'ModSecurity WAF activity — rule hits, blocked requests and their source addresses.',
         'services' => 'Monitored system services and whether each is currently reachable.',
+        'it-assets' => 'ทะเบียนครุภัณฑ์ไอที การตรวจสอบ ประวัติ รูปถ่าย QR Code การซ่อมบำรุง และรอบตรวจนับ.',
     ];
 
     /**

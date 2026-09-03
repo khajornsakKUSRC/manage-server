@@ -69,6 +69,13 @@ return [
         'chat_id' => env('TELEGRAM_DAILY_REPORT_CHAT_ID'),
     ],
 
+    // Its own bot/chat so "new repair request" pings don't mix with the
+    // infra alarm channel. Leave unset to disable — see ItRepairNotificationService.
+    'telegram_it_repair' => [
+        'bot_token' => env('TELEGRAM_IT_REPAIR_BOT_TOKEN'),
+        'chat_id' => env('TELEGRAM_IT_REPAIR_BOT_CHAT_ID'),
+    ],
+
     // Shared secret the (not-yet-installed) server room temperature/
     // humidity sensor sends back on each reading it pushes — see
     // EnvironmentController::ingest(). Unset until a device exists, in

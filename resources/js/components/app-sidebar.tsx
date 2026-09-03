@@ -2,6 +2,7 @@ import { Link, usePage } from '@inertiajs/react';
 import {
     Activity,
     BellRing,
+    Boxes,
     CalendarClock,
     Database,
     History,
@@ -50,13 +51,13 @@ const mainNavItems: PermissionedNavItem[] = [
         permission: 'dashboard',
     },
     {
-        title: 'Manage Hosts',
+        title: 'Hosts',
         href: '/hosts',
         icon: Server,
         permission: 'hosts',
     },
     {
-        title: 'Manage VMs',
+        title: 'VMs',
         href: '/vms',
         icon: Monitor,
         permission: 'vms',
@@ -144,6 +145,12 @@ const mainNavItems: PermissionedNavItem[] = [
         href: '/services',
         icon: ServerCog,
         permission: 'services',
+    },
+    {
+        title: 'IT Assets',
+        href: '/it-assets',
+        icon: Boxes,
+        permission: 'it-assets',
     },
     {
         title: 'Manage Users',
@@ -284,9 +291,9 @@ export function AppSidebar() {
             : null),
         ...(item.href === '/smart-detection'
             ? {
-                  badge: smartDetectionCount,
-                  badgePulse: smartDetectionCount > 0,
-              }
+                badge: smartDetectionCount,
+                badgePulse: smartDetectionCount > 0,
+            }
             : null),
         disabled: !!item.permission && disabledPages.has(item.permission),
     }));

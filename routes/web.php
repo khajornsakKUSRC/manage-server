@@ -14,11 +14,14 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatastoreController;
 use App\Http\Controllers\EnvironmentController;
 use App\Http\Controllers\HostController;
+use App\Http\Controllers\InventorySessionController;
+use App\Http\Controllers\ItAssetController;
 use App\Http\Controllers\ItRepairController;
 use App\Http\Controllers\ModSecurityController;
 use App\Http\Controllers\NetworkMapController;
 use App\Http\Controllers\NetworkMonitorController;
 use App\Http\Controllers\PerformanceController;
+use App\Http\Controllers\PublicAssetController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\ServiceEvaluationController;
@@ -51,6 +54,14 @@ Route::get('it-repair/track', [ItRepairController::class, 'track'])
 Route::post('it-repair/track/{itRepairRequest}/evaluation', [ItRepairController::class, 'publicEvaluate'])
     ->middleware('throttle:20,1')
     ->name('it-repair.track.evaluate');
+
+// Login-free asset lookup — the QR on the sticker resolves to /asset/{key}
+// (key = the unguessable public_token, or the printed asset_code like
+// NB-0002). Shows only basic info, and lets anyone record a verify/count check.
+Route::get('asset/{key}', [PublicAssetController::class, 'show'])->name('asset.public');
+Route::post('asset/{key}/inspect', [PublicAssetController::class, 'inspect'])
+    ->middleware('throttle:30,1')
+    ->name('asset.public.inspect');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('page:dashboard')->group(function () {
@@ -163,6 +174,33 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('services', [ServiceController::class, 'store'])->name('services.store');
         Route::put('services/{service}', [ServiceController::class, 'update'])->name('services.update');
         Route::delete('services/{service}', [ServiceController::class, 'destroy'])->name('services.destroy');
+    });
+
+    Route::middleware('page:it-assets')->group(function () {
+        // Static segments before the {itAsset} wildcard so they aren't
+        // swallowed by route-model binding.
+        Route::get('it-assets', [ItAssetController::class, 'index'])->name('it-assets.index');
+        Route::get('it-assets/scan', [ItAssetController::class, 'scan'])->name('it-assets.scan');
+        Route::get('it-assets/labels', [ItAssetController::class, 'labels'])->name('it-assets.labels');
+        Route::get('it-assets/export', [ItAssetController::class, 'export'])->name('it-assets.export');
+
+        Route::post('it-assets', [ItAssetController::class, 'store'])->name('it-assets.store');
+        Route::post('it-asset-categories', [ItAssetController::class, 'storeCategory'])->name('it-asset-categories.store');
+        Route::put('it-asset-categories/{itAssetCategory}', [ItAssetController::class, 'updateCategory'])->name('it-asset-categories.update');
+        Route::delete('it-asset-categories/{itAssetCategory}', [ItAssetController::class, 'destroyCategory'])->name('it-asset-categories.destroy');
+
+        // Asset-counting rounds.
+        Route::get('it-asset-counting', [InventorySessionController::class, 'index'])->name('it-asset-counting.index');
+        Route::post('it-asset-counting', [InventorySessionController::class, 'store'])->name('it-asset-counting.store');
+        Route::get('it-asset-counting/{inventorySession}', [InventorySessionController::class, 'show'])->name('it-asset-counting.show');
+        Route::post('it-asset-counting/{inventorySession}/count', [InventorySessionController::class, 'count'])->name('it-asset-counting.count');
+        Route::post('it-asset-counting/{inventorySession}/close', [InventorySessionController::class, 'close'])->name('it-asset-counting.close');
+
+        Route::get('it-assets/{itAsset}', [ItAssetController::class, 'show'])->name('it-assets.show');
+        Route::put('it-assets/{itAsset}', [ItAssetController::class, 'update'])->name('it-assets.update');
+        Route::delete('it-assets/{itAsset}', [ItAssetController::class, 'destroy'])->name('it-assets.destroy');
+        Route::get('it-assets/{itAsset}/label', [ItAssetController::class, 'label'])->name('it-assets.label');
+        Route::post('it-assets/{itAsset}/inspections', [ItAssetController::class, 'storeInspection'])->name('it-assets.inspections.store');
     });
 
     // User management and the Activity Log (every user's actions + IPs) are

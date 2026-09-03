@@ -8,6 +8,7 @@ use App\Models\ItRepairEvaluation;
 use App\Models\ItRepairRequest;
 use App\Models\ItRepairServiceType;
 use App\Services\ActivityLogger;
+use App\Services\ItRepairNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -131,7 +132,7 @@ class ItRepairController extends Controller
         return response()->json(['ok' => true]);
     }
 
-    public function store(Request $request, ActivityLogger $activityLogger): RedirectResponse
+    public function store(Request $request, ActivityLogger $activityLogger, ItRepairNotificationService $notifier): RedirectResponse
     {
         $validated = $this->validatedRequest($request);
         $validated['provider_name'] = $validated['provider_name'] ?: $this->resolveProvider($validated['service_type']);
@@ -148,6 +149,8 @@ class ItRepairController extends Controller
             subjectLabel: $repair->full_name,
         );
 
+        $notifier->notifyNewRequest($repair->loadMissing('createdBy'));
+
         return back()->with('success', 'Repair request submitted.');
     }
 
@@ -155,7 +158,7 @@ class ItRepairController extends Controller
      * Anonymous submission from /it-repair/new. No status (staff set that
      * later), no created_by, provider resolved from the chosen type.
      */
-    public function publicStore(Request $request, ActivityLogger $activityLogger): RedirectResponse
+    public function publicStore(Request $request, ActivityLogger $activityLogger, ItRepairNotificationService $notifier): RedirectResponse
     {
         $validated = $request->validate([
             'recipient_email' => 'required|email|max:255',
@@ -179,6 +182,8 @@ class ItRepairController extends Controller
             subjectType: 'it_repair_request',
             subjectLabel: $repair->full_name,
         );
+
+        $notifier->notifyNewRequest($repair);
 
         return redirect()->route('it-repair.create', [
             'submitted' => $repair->id,
