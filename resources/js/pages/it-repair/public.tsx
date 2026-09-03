@@ -1,6 +1,7 @@
 import { Head, useForm, usePage } from '@inertiajs/react';
 import {
     CheckCircle2,
+    ChevronDown,
     ClipboardList,
     Loader2,
     Lock,
@@ -8,7 +9,7 @@ import {
     Star as StarIcon,
     Wrench,
 } from 'lucide-react';
-import { Fragment, useState } from 'react';
+import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { StarRating } from '@/components/star-rating';
 import { Button } from '@/components/ui/button';
@@ -37,6 +38,13 @@ interface Props {
     serviceTypes: ServiceType[];
     criteria: Criterion[];
     submittedId: number | null;
+    /**
+     * When the page is opened via a "track your request" link (?t=token),
+     * the matching request is resolved server-side and passed here so the
+     * tracker shows it straight away — no email to type.
+     */
+    linkedRequest: TrackedRequest | null;
+    trackToken: string | null;
 }
 
 interface FormState {
@@ -82,8 +90,7 @@ const STATUS_STYLES: Record<string, string> = {
         'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
     resolved:
         'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-    closed:
-        'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300',
+    closed: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300',
     cancelled: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 };
 
@@ -108,22 +115,27 @@ function prettyDateTime(iso: string | null): string {
     });
 }
 
-export default function Public({ serviceTypes, criteria, submittedId }: Props) {
+export default function Public({
+    serviceTypes,
+    criteria,
+    submittedId,
+    linkedRequest,
+    trackToken,
+}: Props) {
     const page = usePage().props;
-    const appName = (page.name as string) ?? 'IT Repair';
     const footer = (
         page.siteSettings as { footer_text?: string | null } | undefined
     )?.footer_text;
 
     const [view, setView] = useState<'submit' | 'track'>(
-        submittedId ? 'track' : 'submit',
+        submittedId || linkedRequest ? 'track' : 'submit',
     );
 
     return (
         <div className="flex min-h-svh flex-col bg-background text-foreground">
             <Head title="IT Repair Request" />
 
-            <header className="border-b px-6 py-5 md:px-10">
+            <header className="border-b px-4 py-5 sm:px-6 md:px-10">
                 <div className="flex flex-wrap items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
                         <div className="rounded-lg bg-primary/10 p-2 text-primary">
@@ -134,36 +146,36 @@ export default function Public({ serviceTypes, criteria, submittedId }: Props) {
                                 IT Repair Request
                             </h1>
                             <p className="text-sm text-muted-foreground">
-                                {appName} — no sign-in required.
+                                ระบบแจ้งซ่อมออนไลน์
                             </p>
                         </div>
                     </div>
-                    <div className="inline-flex rounded-lg border p-1">
+                    <div className="flex w-full rounded-lg border p-1 sm:inline-flex sm:w-auto">
                         <button
                             type="button"
                             onClick={() => setView('submit')}
-                            className={`rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${view === 'submit'
+                            className={`flex-1 rounded-md px-4 py-1.5 text-sm font-medium whitespace-nowrap transition-colors sm:flex-none ${view === 'submit'
                                     ? 'bg-primary text-primary-foreground'
                                     : 'text-muted-foreground hover:text-foreground'
                                 }`}
                         >
-                            Submit a request
+                            แจ้งซ่อม
                         </button>
                         <button
                             type="button"
                             onClick={() => setView('track')}
-                            className={`rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${view === 'track'
+                            className={`flex-1 rounded-md px-4 py-1.5 text-sm font-medium whitespace-nowrap transition-colors sm:flex-none ${view === 'track'
                                     ? 'bg-primary text-primary-foreground'
                                     : 'text-muted-foreground hover:text-foreground'
                                 }`}
                         >
-                            Track my requests
+                            ตรวจสอบสถานะ
                         </button>
                     </div>
                 </div>
             </header>
 
-            <main className="flex-1 px-6 py-8 md:px-10">
+            <main className="flex-1 px-4 py-6 sm:px-6 sm:py-8 md:px-10">
                 {view === 'submit' ? (
                     <SubmitForm
                         serviceTypes={serviceTypes}
@@ -174,6 +186,8 @@ export default function Public({ serviceTypes, criteria, submittedId }: Props) {
                     <TrackPanel
                         initialSubmittedId={submittedId}
                         criteria={criteria}
+                        linkedRequest={linkedRequest}
+                        linkToken={trackToken}
                     />
                 )}
             </main>
@@ -231,27 +245,27 @@ function SubmitForm({
                     <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
                     <div>
                         <p className="font-medium">
-                            Request submitted — reference #{submittedId}.
+                            ส่งรายการแจ้งซ่อมแล้ว เลขที่แจ้งซ่อมของคุณคือ #
+                            {submittedId}.
                         </p>
                         <p>
-                            The IT team will review it and update the status.
-                            You can{' '}
+                            ทีม IT จะดำเนินการตรวจสอบและอัปเดตสถานะ คุณสามารถ{' '}
                             <button
                                 type="button"
                                 onClick={onTracked}
                                 className="font-medium underline underline-offset-2"
                             >
-                                track it here
+                                ตรวจสอบสถานะ
                             </button>{' '}
-                            or submit another below.
+                            หรือส่งรายการแจ้งซ่อมใหม่อีกครั้งด้านล่าง
                         </p>
                     </div>
                 </div>
             )}
 
             <div className="grid gap-5 rounded-xl border bg-card p-6 md:grid-cols-2 lg:grid-cols-3">
-                <div className="space-y-2 lg:col-span-1 md:col-span-2">
-                    <Label htmlFor="email">Service recipient (email)</Label>
+                <div className="space-y-2 md:col-span-2 lg:col-span-1">
+                    <Label htmlFor="email">Email (@ku.th)</Label>
                     <Input
                         id="email"
                         type="email"
@@ -269,7 +283,7 @@ function SubmitForm({
                 </div>
 
                 <div className="space-y-2">
-                    <Label htmlFor="name">Full name</Label>
+                    <Label htmlFor="name">ชื่อ - นามสกุล</Label>
                     <Input
                         id="name"
                         value={data.full_name}
@@ -284,10 +298,10 @@ function SubmitForm({
                 </div>
 
                 <div className="space-y-2">
-                    <Label htmlFor="contact">Contact number</Label>
+                    <Label htmlFor="contact">เบอร์ติดต่อ </Label>
                     <Input
                         id="contact"
-                        placeholder="phone or internal ext, e.g. 666710"
+                        placeholder="เบอร์มือถือ หรือ เบอร์ภายใน 666XXX"
                         value={data.contact_number}
                         onChange={(e) =>
                             setData('contact_number', e.target.value)
@@ -302,7 +316,7 @@ function SubmitForm({
                 </div>
 
                 <div className="space-y-2">
-                    <Label htmlFor="when">Date &amp; time of request</Label>
+                    <Label htmlFor="when">วันและเวลาที่แจ้งซ่อม</Label>
                     <Input
                         id="when"
                         type="datetime-local"
@@ -320,7 +334,7 @@ function SubmitForm({
                 </div>
 
                 <div className="space-y-2">
-                    <Label htmlFor="type">Service type</Label>
+                    <Label htmlFor="type">ประเภทงาน </Label>
                     <Select
                         value={data.service_type}
                         onValueChange={(v) => setData('service_type', v)}
@@ -338,7 +352,7 @@ function SubmitForm({
                     </Select>
                     {assignedTo && (
                         <p className="text-xs text-muted-foreground">
-                            Handled by{' '}
+                            ผู้รับผิดชอบ{' '}
                             <span className="font-medium text-foreground">
                                 {assignedTo}
                             </span>
@@ -353,19 +367,17 @@ function SubmitForm({
                 </div>
 
                 <div className="space-y-2 md:col-span-2 lg:col-span-3">
-                    <Label htmlFor="details">Details</Label>
+                    <Label htmlFor="details">รายละเอียด</Label>
                     <textarea
                         id="details"
                         className="flex min-h-40 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                        placeholder="Describe the problem, location, device, etc."
+                        placeholder="แจ้งรายละเอียดของปัญหา, สถานที่, อุปกรณ์"
                         value={data.details}
                         onChange={(e) => setData('details', e.target.value)}
                         required
                     />
                     {errors.details && (
-                        <p className="text-sm text-red-500">
-                            {errors.details}
-                        </p>
+                        <p className="text-sm text-red-500">{errors.details}</p>
                     )}
                 </div>
             </div>
@@ -382,29 +394,43 @@ function SubmitForm({
 function TrackPanel({
     initialSubmittedId,
     criteria,
+    linkedRequest,
+    linkToken,
 }: {
     initialSubmittedId: number | null;
     criteria: Criterion[];
+    linkedRequest: TrackedRequest | null;
+    linkToken: string | null;
 }) {
+    // The request's own secret from the tracking link (?t=...). While it's
+    // set, the tracker acts on that one request without an email.
+    const token = linkToken ?? '';
     const [email, setEmail] = useState('');
     const [searchedEmail, setSearchedEmail] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [results, setResults] = useState<TrackedRequest[] | null>(null);
-    const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+    const [results, setResults] = useState<TrackedRequest[] | null>(
+        linkedRequest ? [linkedRequest] : null,
+    );
+    const [expanded, setExpanded] = useState<Record<number, boolean>>(
+        linkedRequest ? { [linkedRequest.id]: true } : {},
+    );
 
-    const runSearch = async (value: string) => {
+    const runSearch = async (by: { email?: string; token?: string }) => {
         setLoading(true);
         setError(null);
 
+        const query = by.token
+            ? `token=${encodeURIComponent(by.token)}`
+            : `email=${encodeURIComponent(by.email ?? '')}`;
+
         try {
-            const res = await fetch(
-                `/it-repair/track?email=${encodeURIComponent(value)}`,
-                { headers: { Accept: 'application/json' } },
-            );
+            const res = await fetch(`/it-repair/track?${query}`, {
+                headers: { Accept: 'application/json' },
+            });
 
             if (res.status === 422) {
-                setError('Please enter a valid email address.');
+                setError('กรุณากรอกอีเมลให้ถูกต้อง');
                 setResults(null);
 
                 return;
@@ -416,9 +442,12 @@ function TrackPanel({
 
             const json = await res.json();
             setResults(json.data ?? []);
-            setSearchedEmail(value);
+
+            if (by.email) {
+                setSearchedEmail(by.email);
+            }
         } catch {
-            setError('Could not look up requests right now. Try again.');
+            setError('ไม่สามารถค้นหาได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง');
             setResults(null);
         } finally {
             setLoading(false);
@@ -430,13 +459,17 @@ function TrackPanel({
         const value = email.trim();
 
         if (value) {
-            void runSearch(value);
+            void runSearch({ email: value });
         }
     };
 
+    // After a rating is saved, re-pull the same view — by link token if we
+    // came in via the link, otherwise by the email that was searched.
     const refresh = () => {
-        if (searchedEmail) {
-            void runSearch(searchedEmail);
+        if (token) {
+            void runSearch({ token });
+        } else if (searchedEmail) {
+            void runSearch({ email: searchedEmail });
         }
     };
 
@@ -444,14 +477,15 @@ function TrackPanel({
         <div className="w-full space-y-6">
             <div className="rounded-xl border bg-card p-6">
                 <h2 className="text-lg font-semibold">
-                    Track your repair requests
+                    ติดตามการแจ้งซ่อมและประเมินผล
                 </h2>
                 <p className="mb-4 text-sm text-muted-foreground">
-                    Enter the email address you filed the request with
-                    {initialSubmittedId
-                        ? ` (you just submitted reference #${initialSubmittedId})`
+                    {token
+                        ? 'กำลังแสดงรายการแจ้งซ่อมจากลิงก์ของคุณด้านล่าง — หรือค้นหารายการอื่นด้วยอีเมลที่ใช้แจ้งซ่อม'
+                        : 'กรุณาใส่ Email address ที่ใช้ในการแจ้งซ่อม'}
+                    {!token && initialSubmittedId
+                        ? ` (คุณได้ทำการแจ้งซ่อมแล้วหมายเลขอ้างอิง #${initialSubmittedId})`
                         : ''}
-                    .
                 </p>
                 <form
                     onSubmit={search}
@@ -459,7 +493,7 @@ function TrackPanel({
                 >
                     <Input
                         type="email"
-                        placeholder="you@example.com"
+                        placeholder="Email@ku.th"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         className="sm:max-w-sm"
@@ -470,75 +504,45 @@ function TrackPanel({
                         ) : (
                             <Search className="mr-2 h-4 w-4" />
                         )}
-                        Search
+                        ค้นหา
                     </Button>
                 </form>
-                {error && (
-                    <p className="mt-2 text-sm text-red-500">{error}</p>
-                )}
+                {error && <p className="mt-2 text-sm text-red-500">{error}</p>}
             </div>
 
             {results !== null && (
-                <div className="rounded-xl border bg-card">
+                <div className="overflow-hidden rounded-xl border bg-card">
                     {results.length === 0 ? (
                         <div className="flex items-center gap-3 p-6 text-sm text-muted-foreground">
-                            <ClipboardList className="h-5 w-5" />
-                            No repair requests found for that email address.
+                            <ClipboardList className="h-5 w-5 shrink-0" />
+                            ไม่พบรายการแจ้งซ่อมที่ตรงกับ Email
                         </div>
                     ) : (
-                        <table className="w-full text-left text-sm">
-                            <thead className="bg-muted/50 text-xs text-muted-foreground uppercase">
-                                <tr>
-                                    <th className="px-4 py-2 font-medium">
-                                        Ref
-                                    </th>
-                                    <th className="px-4 py-2 font-medium">
-                                        Requested
-                                    </th>
-                                    <th className="px-4 py-2 font-medium">
-                                        Type
-                                    </th>
-                                    <th className="px-4 py-2 font-medium">
-                                        Provider
-                                    </th>
-                                    <th className="px-4 py-2 font-medium">
-                                        Status
-                                    </th>
-                                    <th className="px-4 py-2 font-medium">
-                                        Last updated
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y">
-                                {results.map((r) => {
-                                    const open = expanded[r.id] ?? false;
+                        <ul className="divide-y">
+                            {results.map((r) => {
+                                const open = expanded[r.id] ?? false;
+                                const canRate =
+                                    r.status === 'resolved' ||
+                                    r.status === 'closed';
 
-                                    return (
-                                        <Fragment key={r.id}>
-                                            <tr
-                                                className="cursor-pointer align-top hover:bg-muted/30"
-                                                onClick={() =>
-                                                    setExpanded((p) => ({
-                                                        ...p,
-                                                        [r.id]: !open,
-                                                    }))
-                                                }
-                                            >
-                                                <td className="px-4 py-3 font-mono">
-                                                    #{r.id}
-                                                </td>
-                                                <td className="px-4 py-3 whitespace-nowrap">
-                                                    {prettyDateTime(
-                                                        r.requested_at,
-                                                    )}
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    {r.service_type}
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    {r.provider_name ?? '—'}
-                                                </td>
-                                                <td className="px-4 py-3">
+                                return (
+                                    <li key={r.id} className="p-4 sm:p-5">
+                                        <button
+                                            type="button"
+                                            aria-expanded={open}
+                                            onClick={() =>
+                                                setExpanded((p) => ({
+                                                    ...p,
+                                                    [r.id]: !open,
+                                                }))
+                                            }
+                                            className="flex w-full items-start justify-between gap-3 text-left"
+                                        >
+                                            <div className="min-w-0 space-y-1">
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <span className="font-mono text-sm font-medium">
+                                                        #{r.id}
+                                                    </span>
                                                     <span
                                                         className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[
                                                             r.status
@@ -548,51 +552,69 @@ function TrackPanel({
                                                     >
                                                         {r.status_label}
                                                     </span>
-                                                </td>
-                                                <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
+                                                </div>
+                                                <p className="font-medium break-words">
+                                                    {r.service_type}
+                                                </p>
+                                                <p className="text-xs text-muted-foreground">
+                                                    {r.provider_name ?? '—'}
+                                                </p>
+                                            </div>
+                                            <ChevronDown
+                                                className={`mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''
+                                                    }`}
+                                            />
+                                        </button>
+
+                                        <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
+                                            <div className="min-w-0">
+                                                <dt className="text-xs text-muted-foreground">
+                                                    Requested
+                                                </dt>
+                                                <dd>
+                                                    {prettyDateTime(
+                                                        r.requested_at,
+                                                    )}
+                                                </dd>
+                                            </div>
+                                            <div className="min-w-0">
+                                                <dt className="text-xs text-muted-foreground">
+                                                    Last updated
+                                                </dt>
+                                                <dd className="text-muted-foreground">
                                                     {prettyDateTime(
                                                         r.updated_at,
                                                     )}
-                                                </td>
-                                            </tr>
-                                            {open && (
-                                                <tr className="bg-muted/20">
-                                                    <td
-                                                        colSpan={6}
-                                                        className="px-4 py-3"
-                                                    >
-                                                        <p className="mb-1 text-xs font-medium text-muted-foreground uppercase">
-                                                            Details
-                                                        </p>
-                                                        <p className="whitespace-pre-wrap text-sm">
-                                                            {r.details}
-                                                        </p>
-                                                    </td>
-                                                </tr>
-                                            )}
-                                            {(r.status === 'resolved' ||
-                                                r.status === 'closed') && (
-                                                    <tr className="bg-green-50/50 dark:bg-green-900/10">
-                                                        <td
-                                                            colSpan={6}
-                                                            className="px-4 py-4"
-                                                        >
-                                                            <PublicEvaluation
-                                                                request={r}
-                                                                criteria={criteria}
-                                                                email={
-                                                                    searchedEmail
-                                                                }
-                                                                onSaved={refresh}
-                                                            />
-                                                        </td>
-                                                    </tr>
-                                                )}
-                                        </Fragment>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
+                                                </dd>
+                                            </div>
+                                        </dl>
+
+                                        {open && (
+                                            <div className="mt-3 rounded-lg bg-muted/40 p-3">
+                                                <p className="mb-1 text-xs font-medium text-muted-foreground uppercase">
+                                                    Details
+                                                </p>
+                                                <p className="text-sm break-words whitespace-pre-wrap">
+                                                    {r.details}
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        {canRate && (
+                                            <div className="mt-3 rounded-lg border border-green-200 bg-green-50/60 p-3 dark:border-green-900/40 dark:bg-green-900/10">
+                                                <PublicEvaluation
+                                                    request={r}
+                                                    criteria={criteria}
+                                                    email={searchedEmail}
+                                                    token={token}
+                                                    onSaved={refresh}
+                                                />
+                                            </div>
+                                        )}
+                                    </li>
+                                );
+                            })}
+                        </ul>
                     )}
                 </div>
             )}
@@ -604,11 +626,15 @@ function PublicEvaluation({
     request,
     criteria,
     email,
+    token,
     onSaved,
 }: {
     request: TrackedRequest;
     criteria: Criterion[];
     email: string;
+    /** Link token — used in place of the email when the page was opened via
+     * the tracking link. */
+    token: string;
     onSaved: () => void;
 }) {
     const existing = request.evaluation;
@@ -626,9 +652,9 @@ function PublicEvaluation({
             <div className="space-y-2">
                 <p className="flex items-center gap-2 text-sm font-semibold text-teal-700 dark:text-teal-300">
                     <Lock className="h-4 w-4" />
-                    Job Closed
+                    ปิดงานแล้ว
                     {existing
-                        ? ` — you rated this ${existing.average.toFixed(1)}/5. The rating is final.`
+                        ? ` — คะแนนการให้บริการ ${existing.average.toFixed(1)}/5`
                         : '.'}
                 </p>
                 {existing && (
@@ -673,8 +699,7 @@ function PublicEvaluation({
             <div className="space-y-2">
                 <p className="flex items-center gap-2 text-sm font-medium text-green-700 dark:text-green-400">
                     <StarIcon className="h-4 w-4 fill-current" />
-                    Thanks — you rated this service{' '}
-                    {existing.average.toFixed(1)}/5.
+                    ขอบคุณที่ให้คะแนนบริการ {existing.average.toFixed(1)}/5.
                 </p>
                 <div className="grid gap-1 sm:grid-cols-2">
                     {criteria.map((c) => (
@@ -698,14 +723,14 @@ function PublicEvaluation({
                         “{existing.comment}”
                     </p>
                 )}
-                {/* <Button
+                <Button
                     type="button"
                     size="sm"
                     variant="outline"
                     onClick={() => setEditing(true)}
                 >
-                    Change rating
-                </Button> */}
+                    แก้ไขคะแนน
+                </Button>
             </div>
         );
     }
@@ -726,7 +751,11 @@ function PublicEvaluation({
                         Accept: 'application/json',
                         'X-XSRF-TOKEN': csrfToken(),
                     },
-                    body: JSON.stringify({ email, scores, comment }),
+                    body: JSON.stringify({
+                        scores,
+                        comment,
+                        ...(token ? { token } : { email }),
+                    }),
                 },
             );
 
@@ -737,9 +766,7 @@ function PublicEvaluation({
             }
 
             if (res.status === 403) {
-                setError(
-                    'This request belongs to a different email address.',
-                );
+                setError('This link or email does not match this request.');
             } else if (res.status === 422) {
                 setError('Please give every item a star rating.');
             } else {
@@ -780,7 +807,7 @@ function PublicEvaluation({
                 onChange={(e) => setComment(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-                5 stars = highest, 1 star = lowest.
+                5 ดาว = มากสุด, 1 ดาว = น้อยสุด
             </p>
             {error && <p className="text-sm text-red-500">{error}</p>}
             <div className="flex gap-2">
@@ -790,7 +817,7 @@ function PublicEvaluation({
                     onClick={submit}
                     disabled={saving || !allScored}
                 >
-                    {saving ? 'Saving…' : 'Submit rating'}
+                    {saving ? 'Saving…' : 'ส่ง'}
                 </Button>
                 {existing && (
                     <Button

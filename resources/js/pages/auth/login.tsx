@@ -35,7 +35,7 @@ export default function Login({ status, canResetPassword }: Props) {
         <>
             <Head title="Log in" />
 
-            <PasskeyVerify />
+            {/* <PasskeyVerify /> */}
 
             <Form
                 {...store.form()}
@@ -90,7 +90,7 @@ export default function Login({ status, canResetPassword }: Props) {
                                     name="remember"
                                     tabIndex={3}
                                 />
-                                <Label htmlFor="remember">Remember me</Label>
+                                <Label htmlFor="remember">จดจำการเข้าสู่ระบบ</Label>
                             </div>
 
                             <Button

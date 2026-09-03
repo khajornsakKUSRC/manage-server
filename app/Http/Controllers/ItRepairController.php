@@ -43,46 +43,48 @@ class ItRepairController extends Controller
      */
     public function create(Request $request): Response
     {
+        // The "track your request" link carries the request's own secret
+        // token (?t=...) so the person who filed it lands straight on their
+        // status + rating, no email to type. The token is the credential.
+        $token = trim((string) $request->query('t', ''));
+        $linked = $token !== ''
+            ? ItRepairRequest::with('evaluation.scores')->where('public_token', $token)->first()
+            : null;
+
         return Inertia::render('it-repair/public', [
             'serviceTypes' => ItRepairServiceType::orderBy('name')->get(['id', 'name', 'provider_name']),
             'criteria' => ItRepairEvalCriterion::active()->ordered()->get(['id', 'name']),
             'submittedId' => $request->integer('submitted') ?: null,
+            'trackToken' => $linked ? $token : null,
+            'linkedRequest' => $linked ? $this->presentPublic($linked) : null,
         ]);
     }
 
     /**
-     * Public status lookup: given a recipient email, return that person's
-     * own repair requests and their current (admin-set) status.
+     * Public status lookup — by the recipient's own email, or by the
+     * request's secret token (from the tracking link). Either identifies
+     * the person; neither requires an account.
      */
     public function track(Request $request): JsonResponse
     {
-        $validated = $request->validate(['email' => 'required|email']);
+        $validated = $request->validate([
+            'email' => 'required_without:token|nullable|email',
+            'token' => 'required_without:email|nullable|string',
+        ]);
 
-        $rows = ItRepairRequest::with('evaluation.scores')
-            ->whereRaw('LOWER(recipient_email) = ?', [mb_strtolower($validated['email'])])
+        $query = ItRepairRequest::with('evaluation.scores')
             ->orderByDesc('requested_at')
-            ->orderByDesc('id')
-            ->get()
-            ->map(fn (ItRepairRequest $r) => [
-                'id' => $r->id,
-                'full_name' => $r->full_name,
-                'requested_at' => $r->requested_at->toIso8601String(),
-                'service_type' => $r->service_type,
-                'provider_name' => $r->provider_name,
-                'details' => $r->details,
-                'status' => $r->status,
-                'status_label' => ItRepairRequest::STATUSES[$r->status] ?? $r->status,
-                'updated_at' => $r->updated_at?->toIso8601String(),
-                'evaluation' => $r->evaluation ? [
-                    'evaluated_at' => $r->evaluation->evaluated_at->toIso8601String(),
-                    'comment' => $r->evaluation->comment,
-                    'scores' => $r->evaluation->scores
-                        ->mapWithKeys(fn ($s) => [$s->it_repair_eval_criterion_id => $s->score]),
-                    'average' => round($r->evaluation->scores->avg('score') ?? 0, 2),
-                ] : null,
-            ]);
+            ->orderByDesc('id');
 
-        return response()->json(['data' => $rows]);
+        if (! empty($validated['token'])) {
+            $query->where('public_token', $validated['token']);
+        } else {
+            $query->whereRaw('LOWER(recipient_email) = ?', [mb_strtolower($validated['email'])]);
+        }
+
+        return response()->json([
+            'data' => $query->get()->map(fn (ItRepairRequest $r) => $this->presentPublic($r)),
+        ]);
     }
 
     /**
@@ -93,16 +95,22 @@ class ItRepairController extends Controller
     public function publicEvaluate(Request $request, ItRepairRequest $itRepairRequest, ActivityLogger $activityLogger): JsonResponse
     {
         $validated = $request->validate([
-            'email' => 'required|email',
+            'email' => 'required_without:token|nullable|email',
+            'token' => 'required_without:email|nullable|string',
             'comment' => 'nullable|string|max:2000',
             'scores' => 'required|array|min:1',
             'scores.*' => 'required|integer|between:1,5',
         ]);
 
+        $viaToken = ! empty($validated['token'])
+            && hash_equals((string) $itRepairRequest->public_token, (string) $validated['token']);
+        $viaEmail = ! empty($validated['email'])
+            && mb_strtolower($validated['email']) === mb_strtolower($itRepairRequest->recipient_email);
+
         abort_unless(
-            mb_strtolower($validated['email']) === mb_strtolower($itRepairRequest->recipient_email),
+            $viaToken || $viaEmail,
             403,
-            'That email does not match this request.',
+            'This link or email does not match the request.',
         );
         abort_if($itRepairRequest->status === 'closed', 422, 'This request is closed — the rating can no longer be changed.');
         abort_unless($itRepairRequest->status === 'resolved', 422, 'This request is not resolved yet.');
@@ -172,7 +180,10 @@ class ItRepairController extends Controller
             subjectLabel: $repair->full_name,
         );
 
-        return redirect()->route('it-repair.create', ['submitted' => $repair->id]);
+        return redirect()->route('it-repair.create', [
+            'submitted' => $repair->id,
+            't' => $repair->public_token,
+        ]);
     }
 
     public function updateStatus(Request $request, ItRepairRequest $itRepairRequest, ActivityLogger $activityLogger): RedirectResponse
@@ -391,6 +402,36 @@ class ItRepairController extends Controller
             'details' => 'required|string|max:5000',
             'status' => ['required', Rule::in(array_keys(ItRepairRequest::STATUSES))],
         ]);
+    }
+
+    /**
+     * The public tracker's view of one request — status, details and the
+     * recipient's own rating. Shared by the token lookup on create() and
+     * the email/token lookup in track(). Deliberately omits internal-only
+     * fields (contact number, who filed it, the token itself).
+     *
+     * @return array<string, mixed>
+     */
+    private function presentPublic(ItRepairRequest $r): array
+    {
+        return [
+            'id' => $r->id,
+            'full_name' => $r->full_name,
+            'requested_at' => $r->requested_at->toIso8601String(),
+            'service_type' => $r->service_type,
+            'provider_name' => $r->provider_name,
+            'details' => $r->details,
+            'status' => $r->status,
+            'status_label' => ItRepairRequest::STATUSES[$r->status] ?? $r->status,
+            'updated_at' => $r->updated_at?->toIso8601String(),
+            'evaluation' => $r->evaluation ? [
+                'evaluated_at' => $r->evaluation->evaluated_at->toIso8601String(),
+                'comment' => $r->evaluation->comment,
+                'scores' => $r->evaluation->scores
+                    ->mapWithKeys(fn ($s) => [$s->it_repair_eval_criterion_id => $s->score]),
+                'average' => round($r->evaluation->scores->avg('score') ?? 0, 2),
+            ] : null,
+        ];
     }
 
     /**

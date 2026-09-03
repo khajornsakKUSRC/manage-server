@@ -264,7 +264,7 @@ export default function Index({
                             rel="noreferrer"
                         >
                             <ExternalLink className="mr-2 h-4 w-4" />
-                            Open public form
+                            คลิ๊กเพื่อเปิดฟอร์มแจ้งซ่อม
                         </a>
                     </Button>
                 </div>
@@ -371,12 +371,11 @@ export default function Index({
                                                         }
                                                     >
                                                         <SelectTrigger
-                                                            className={`h-7 w-36 border-0 text-xs font-medium ${
-                                                                STATUS_STYLES[
-                                                                    row.status
-                                                                ] ??
+                                                            className={`h-7 w-36 border-0 text-xs font-medium ${STATUS_STYLES[
+                                                                row.status
+                                                            ] ??
                                                                 STATUS_STYLES.pending
-                                                            }`}
+                                                                }`}
                                                         >
                                                             <SelectValue />
                                                         </SelectTrigger>
@@ -440,7 +439,7 @@ export default function Index({
                                                         }
                                                         title={
                                                             criteria.length ===
-                                                            0
+                                                                0
                                                                 ? 'No active criteria — add them on the Service Evaluation page'
                                                                 : undefined
                                                         }
@@ -495,17 +494,17 @@ export default function Index({
                                                         </p>
                                                         {row.evaluation
                                                             ?.comment && (
-                                                            <p className="mt-2 text-sm text-muted-foreground">
-                                                                <span className="font-medium">
-                                                                    Feedback:
-                                                                </span>{' '}
-                                                                {
-                                                                    row
-                                                                        .evaluation
-                                                                        .comment
-                                                                }
-                                                            </p>
-                                                        )}
+                                                                <p className="mt-2 text-sm text-muted-foreground">
+                                                                    <span className="font-medium">
+                                                                        Feedback:
+                                                                    </span>{' '}
+                                                                    {
+                                                                        row
+                                                                            .evaluation
+                                                                            .comment
+                                                                    }
+                                                                </p>
+                                                            )}
                                                         {row.created_by && (
                                                             <p className="mt-2 text-xs text-muted-foreground">
                                                                 Logged by{' '}

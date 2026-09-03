@@ -15,7 +15,7 @@ export function NavMain({ items = [] }: { items: NavItem[] }) {
 
     return (
         <SidebarGroup className="px-2 py-0">
-            <SidebarGroupLabel>Platform</SidebarGroupLabel>
+            <SidebarGroupLabel>MENU</SidebarGroupLabel>
             <SidebarMenu>
                 {items.map((item) =>
                     item.disabled ? (
@@ -46,11 +46,10 @@ export function NavMain({ items = [] }: { items: NavItem[] }) {
                             </SidebarMenuButton>
                             {!!item.badge && (
                                 <SidebarMenuBadge
-                                    className={`bg-red-500 text-white ${
-                                        item.badgePulse
+                                    className={`bg-red-500 text-white ${item.badgePulse
                                             ? 'animate-badge-flash'
                                             : ''
-                                    }`}
+                                        }`}
                                 >
                                     {item.badge > 99 ? '99+' : item.badge}
                                 </SidebarMenuBadge>

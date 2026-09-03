@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Str;
 
 class ItRepairRequest extends Model
 {
@@ -39,6 +40,23 @@ class ItRepairRequest extends Model
     protected $casts = [
         'requested_at' => 'datetime',
     ];
+
+    /**
+     * Kept out of array/JSON output — the token is a credential and is only
+     * ever handed back deliberately, in the tracking link and payload.
+     *
+     * @var list<string>
+     */
+    protected $hidden = [
+        'public_token',
+    ];
+
+    protected static function booted(): void
+    {
+        static::creating(function (self $request): void {
+            $request->public_token ??= Str::random(48);
+        });
+    }
 
     public function createdBy(): BelongsTo
     {
