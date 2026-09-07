@@ -2,7 +2,9 @@
 
 use Illuminate\Support\Facades\Route;
 
-Route::redirect('/', '/login')->name('home');
+// Closure (not Route::redirect) so the Location header is built through the
+// URL generator and picks up APP_URL_PREFIX — see HandleUrlPrefix.
+Route::get('/', fn () => redirect()->route('login'))->name('home');
 
 use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\AlarmController;

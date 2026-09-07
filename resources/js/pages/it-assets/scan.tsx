@@ -4,6 +4,7 @@ import QrScanner from 'qr-scanner';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { bp } from '@/lib/base-path';
 
 /**
  * Mobile QR scanner (device camera). A successful decode of an asset QR
@@ -25,7 +26,7 @@ export default function Scan() {
 
             try {
                 const url = new URL(data, window.location.origin);
-                window.location.href = url.pathname + url.search;
+                window.location.href = bp(url.pathname + url.search);
             } catch {
                 window.location.href = data;
             }
@@ -120,7 +121,9 @@ function ManualEntry() {
                 const c = code.trim();
 
                 if (c) {
-                    window.location.href = `/asset/${encodeURIComponent(c)}`;
+                    window.location.href = bp(
+                        `/asset/${encodeURIComponent(c)}`,
+                    );
                 }
             }}
             className="space-y-1 border-t pt-3"

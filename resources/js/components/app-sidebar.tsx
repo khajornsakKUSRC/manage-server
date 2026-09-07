@@ -62,12 +62,12 @@ const mainNavItems: PermissionedNavItem[] = [
         icon: Monitor,
         permission: 'vms',
     },
-    {
-        title: 'Certificate Expiration',
-        href: '/certificate-expiration',
-        icon: ShieldCheck,
-        permission: 'certificate-expiration',
-    },
+    // {
+    //     title: 'Certificate Expiration',
+    //     href: '/certificate-expiration',
+    //     icon: ShieldCheck,
+    //     permission: 'certificate-expiration',
+    // },
     {
         title: 'Appliance Health',
         href: '/appliance',
@@ -86,18 +86,18 @@ const mainNavItems: PermissionedNavItem[] = [
         icon: CalendarClock,
         permission: 'calendar-notice',
     },
-    {
-        title: 'IT Repair',
-        href: '/it-repair',
-        icon: Wrench,
-        permission: 'it-repair',
-    },
-    {
-        title: 'Service Evaluation',
-        href: '/it-repair-evaluation',
-        icon: Star,
-        permission: 'it-repair-evaluation',
-    },
+    // {
+    //     title: 'IT Repair',
+    //     href: '/it-repair',
+    //     icon: Wrench,
+    //     permission: 'it-repair',
+    // },
+    // {
+    //     title: 'Service Evaluation',
+    //     href: '/it-repair-evaluation',
+    //     icon: Star,
+    //     permission: 'it-repair-evaluation',
+    // },
     {
         title: 'Alarm Notification',
         href: '/alarms',
@@ -116,12 +116,12 @@ const mainNavItems: PermissionedNavItem[] = [
         icon: Network,
         permission: 'network-infrastructure',
     },
-    {
-        title: 'Map Network',
-        href: '/network-map',
-        icon: Map,
-        permission: 'network-map',
-    },
+    // {
+    //     title: 'Map Network',
+    //     href: '/network-map',
+    //     icon: Map,
+    //     permission: 'network-map',
+    // },
     {
         title: 'Performance',
         href: '/performance',
@@ -146,12 +146,12 @@ const mainNavItems: PermissionedNavItem[] = [
         icon: ServerCog,
         permission: 'services',
     },
-    {
-        title: 'IT Assets',
-        href: '/it-assets',
-        icon: Boxes,
-        permission: 'it-assets',
-    },
+    // {
+    //     title: 'IT Assets',
+    //     href: '/it-assets',
+    //     icon: Boxes,
+    //     permission: 'it-assets',
+    // },
     {
         title: 'Manage Users',
         href: '/users',

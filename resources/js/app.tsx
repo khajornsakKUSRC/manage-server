@@ -6,6 +6,12 @@ import { initializeTheme } from '@/hooks/use-appearance';
 import AppLayout from '@/layouts/app-layout';
 import AuthLayout from '@/layouts/auth-layout';
 import SettingsLayout from '@/layouts/settings/layout';
+import { installBasePathShims } from '@/lib/base-path';
+
+// Keep client-side navigation / fetches under the sub-path the app is
+// mounted on (APP_URL_PREFIX). No-op at a domain root. Must run before
+// Inertia boots.
+installBasePathShims();
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 

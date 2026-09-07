@@ -30,6 +30,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import { bp } from '@/lib/base-path';
 import { notifyError, notifyInfo, notifySuccess } from '@/lib/swal';
 
 interface ReportRow {
@@ -167,7 +168,7 @@ export default function Index({
             end_date: exportEnd,
         });
         notifyInfo('กำลังสร้างไฟล์ PDF และเริ่มดาวน์โหลด...', 'กำลังดำเนินการ');
-        window.location.href = `/daily-reports/export?${params.toString()}`;
+        window.location.href = bp(`/daily-reports/export?${params.toString()}`);
         setExportOpen(false);
     };
 

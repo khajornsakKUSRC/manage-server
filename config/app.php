@@ -56,6 +56,25 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | URL Prefix (sub-path hosting)
+    |--------------------------------------------------------------------------
+    |
+    | Set this (e.g. "manage-server") to serve the whole app under a sub-path
+    | of another domain — https://services.example.ac.th/manage-server. Left
+    | blank, the app behaves exactly as if mounted at the domain root.
+    | See App\Http\Middleware\HandleUrlPrefix.
+    |
+    */
+
+    'url_prefix' => trim((string) env('APP_URL_PREFIX', ''), '/'),
+
+    // Overrides the root used by asset()/@vite when the built assets live
+    // somewhere other than the app root (needed under a sub-path). Falls
+    // back to the request root, which HandleUrlPrefix keeps prefix-aware.
+    'asset_url' => env('ASSET_URL'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

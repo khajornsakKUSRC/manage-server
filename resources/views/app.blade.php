@@ -4,6 +4,11 @@
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
 
+        {{-- Sub-path the app is mounted under ("" or "/manage-server"),
+             read by resources/js/lib/base-path.ts so client-side navigation
+             and fetches stay under it. --}}
+        <meta name="base-path" content="{{ Illuminate\Support\Facades\Request::getBaseUrl() }}">
+
         {{-- Inline script to detect system dark mode preference and apply it immediately --}}
         <script>
             (function() {

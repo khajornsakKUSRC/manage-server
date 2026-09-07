@@ -67,9 +67,10 @@ class FortifyServiceProvider extends ServiceProvider
             'status' => $request->session()->get('status'),
         ]));
 
-        Fortify::registerView(fn () => Inertia::render('auth/register', [
-            'passwordRules' => Password::defaults()->toPasswordRulesString(),
-        ]));
+        // No self-registration — accounts are created from Manage Users by
+        // an admin. Fortify's registration feature is off (config/fortify.php)
+        // so there's no /register route; the view + page were dead code and
+        // the page's generated route import broke `npm run build`.
 
         Fortify::twoFactorChallengeView(fn () => Inertia::render('auth/two-factor-challenge'));
 
