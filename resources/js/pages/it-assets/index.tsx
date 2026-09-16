@@ -33,21 +33,29 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import { bp } from '@/lib/base-path';
 import { notifyError, notifySuccess } from '@/lib/swal';
 
 interface AssetRow {
     id: number;
     asset_code: string;
+    erp_asset_code: string | null;
+    asset_code_3d: string | null;
+    old_asset_code: string | null;
     name: string;
     category: string | null;
     brand: string | null;
     model: string | null;
+    specifications: string | null;
+    quantity: number | null;
+    unit: string | null;
     serial_number: string | null;
     status: string;
     status_label: string;
     department: string | null;
     location: string | null;
     assigned_to: string | null;
+    supply_officer_name: string | null;
     last_inspected_at: string | null;
     last_inspection_status: string | null;
     photo_url: string | null;
@@ -127,15 +135,22 @@ function prettyDateTime(iso: string | null): string {
 
 const BLANK = {
     asset_code: '',
+    erp_asset_code: '',
+    asset_code_3d: '',
+    old_asset_code: '',
     name: '',
     it_asset_category_id: '',
     brand: '',
     model: '',
+    specifications: '',
+    quantity: '',
+    unit: '',
     serial_number: '',
     status: 'in_use',
     department: '',
     location: '',
     assigned_to: '',
+    supply_officer_name: '',
     purchased_at: '',
     price: '',
     warranty_until: '',
@@ -146,15 +161,22 @@ type FormState = typeof BLANK;
 function toForm(a: AssetRow): FormState {
     return {
         asset_code: a.asset_code,
+        erp_asset_code: a.erp_asset_code ?? '',
+        asset_code_3d: a.asset_code_3d ?? '',
+        old_asset_code: a.old_asset_code ?? '',
         name: a.name,
         it_asset_category_id: a.category_id ? String(a.category_id) : '',
         brand: a.brand ?? '',
         model: a.model ?? '',
+        specifications: a.specifications ?? '',
+        quantity: a.quantity != null ? String(a.quantity) : '',
+        unit: a.unit ?? '',
         serial_number: a.serial_number ?? '',
         status: a.status,
         department: a.department ?? '',
         location: a.location ?? '',
         assigned_to: a.assigned_to ?? '',
+        supply_officer_name: a.supply_officer_name ?? '',
         purchased_at: a.purchased_at ?? '',
         price: a.price != null ? String(a.price) : '',
         warranty_until: a.warranty_until ?? '',
@@ -329,13 +351,13 @@ export default function Index({
                     </div>
                     <div className="flex flex-wrap gap-2">
                         <Button variant="outline" asChild>
-                            <Link href="/it-assets/scan">
+                            <Link href={bp('/it-assets/scan')}>
                                 <ScanLine className="mr-2 h-4 w-4" />
                                 สแกน QR
                             </Link>
                         </Button>
                         <Button variant="outline" asChild>
-                            <Link href="/it-asset-counting">
+                            <Link href={bp('/it-asset-counting')}>
                                 <Boxes className="mr-2 h-4 w-4" />
                                 รอบตรวจนับ
                             </Link>
@@ -385,7 +407,9 @@ export default function Index({
                         <div className="ml-auto flex gap-2">
                             <Button variant="outline" size="sm" asChild>
                                 <a
-                                    href={`/it-assets/export?${new URLSearchParams(cleanFilters(filters)).toString()}`}
+                                    href={bp(
+                                        `/it-assets/export?${new URLSearchParams(cleanFilters(filters)).toString()}`,
+                                    )}
                                 >
                                     <FileSpreadsheet className="mr-2 h-4 w-4" />
                                     Excel
@@ -393,7 +417,9 @@ export default function Index({
                             </Button>
                             <Button variant="outline" size="sm" asChild>
                                 <a
-                                    href={`/it-assets/export?format=pdf&${new URLSearchParams(cleanFilters(filters)).toString()}`}
+                                    href={bp(
+                                        `/it-assets/export?format=pdf&${new URLSearchParams(cleanFilters(filters)).toString()}`,
+                                    )}
                                 >
                                     <Download className="mr-2 h-4 w-4" />
                                     PDF
@@ -499,7 +525,9 @@ export default function Index({
                                             >
                                                 <td className="px-3 py-3 font-mono font-medium">
                                                     <Link
-                                                        href={`/it-assets/${a.id}`}
+                                                        href={bp(
+                                                            `/it-assets/${a.id}`,
+                                                        )}
                                                         className="hover:underline"
                                                     >
                                                         {a.asset_code}
@@ -619,6 +647,39 @@ export default function Index({
                                 placeholder="เว้นว่างให้ระบบออกให้อัตโนมัติ"
                             />
                         </Field>
+                        <Field
+                            label="รหัสทรัพย์สิน ERP"
+                            error={errors.erp_asset_code}
+                        >
+                            <Input
+                                value={form.erp_asset_code}
+                                onChange={(e) =>
+                                    set('erp_asset_code', e.target.value)
+                                }
+                            />
+                        </Field>
+                        <Field
+                            label="รหัสทรัพย์สินสามมิติ"
+                            error={errors.asset_code_3d}
+                        >
+                            <Input
+                                value={form.asset_code_3d}
+                                onChange={(e) =>
+                                    set('asset_code_3d', e.target.value)
+                                }
+                            />
+                        </Field>
+                        <Field
+                            label="รหัสทรัพย์สินเดิม"
+                            error={errors.old_asset_code}
+                        >
+                            <Input
+                                value={form.old_asset_code}
+                                onChange={(e) =>
+                                    set('old_asset_code', e.target.value)
+                                }
+                            />
+                        </Field>
                         <Field label="ชื่อครุภัณฑ์ *" error={errors.name}>
                             <Input
                                 value={form.name}
@@ -702,11 +763,38 @@ export default function Index({
                                 }
                             />
                         </Field>
+                        <Field label="จำนวนตามบัญชี" error={errors.quantity}>
+                            <Input
+                                type="number"
+                                min={0}
+                                value={form.quantity}
+                                onChange={(e) =>
+                                    set('quantity', e.target.value)
+                                }
+                            />
+                        </Field>
+                        <Field label="หน่วยนับ" error={errors.unit}>
+                            <Input
+                                value={form.unit}
+                                onChange={(e) => set('unit', e.target.value)}
+                            />
+                        </Field>
                         <Field label="ผู้ครอบครอง" error={errors.assigned_to}>
                             <Input
                                 value={form.assigned_to}
                                 onChange={(e) =>
                                     set('assigned_to', e.target.value)
+                                }
+                            />
+                        </Field>
+                        <Field
+                            label="ชื่อเจ้าหน้าที่พัสดุ"
+                            error={errors.supply_officer_name}
+                        >
+                            <Input
+                                value={form.supply_officer_name}
+                                onChange={(e) =>
+                                    set('supply_officer_name', e.target.value)
                                 }
                             />
                         </Field>
@@ -768,6 +856,21 @@ export default function Index({
                             />
                         </Field>
                         <div className="sm:col-span-2">
+                            <Label>คุณลักษณะ</Label>
+                            <textarea
+                                className="mt-1 flex min-h-16 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                                value={form.specifications}
+                                onChange={(e) =>
+                                    set('specifications', e.target.value)
+                                }
+                            />
+                            {errors.specifications && (
+                                <p className="text-xs text-red-500">
+                                    {errors.specifications}
+                                </p>
+                            )}
+                        </div>
+                        <div className="sm:col-span-2">
                             <Label>หมายเหตุ</Label>
                             <textarea
                                 className="mt-1 flex min-h-20 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
@@ -815,7 +918,7 @@ export default function Index({
                             </p>
                             <Button asChild className="w-full">
                                 <a
-                                    href={`/it-assets/${qrAsset.id}/label`}
+                                    href={bp(`/it-assets/${qrAsset.id}/label`)}
                                     target="_blank"
                                     rel="noreferrer"
                                 >

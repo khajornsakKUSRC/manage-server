@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\InventorySessionItem;
 use App\Models\ItAsset;
+use App\Models\ItAssetAssignment;
 use App\Models\ItAssetCategory;
 use App\Models\ItAssetInspection;
 use App\Services\ActivityLogger;
@@ -99,6 +100,7 @@ class ItAssetController extends Controller
         return Inertia::render('it-assets/show', [
             'asset' => $this->presentDetail($itAsset),
             'inspectionStatuses' => ItAssetInspection::STATUSES,
+            'documentTypes' => ItAssetAssignment::DOCUMENT_TYPES,
             'publicUrl' => route('asset.public', $itAsset->public_token),
             'canManage' => (bool) $request->user()->is_admin,
         ]);
@@ -181,6 +183,48 @@ class ItAssetController extends Controller
         );
 
         return back()->with('success', 'บันทึกผลการตรวจสอบเรียบร้อยแล้ว');
+    }
+
+    /**
+     * Appends one movement/transaction record (ซื้อ/จ้าง/ย้าย/จำหน่าย) to the
+     * asset's history and — since it_assets.location/department/assigned_to
+     * are only ever a label for the *current* state — copies whichever of
+     * those three fields were given onto the asset itself, so the registry
+     * list and this entry never disagree about where the asset is now.
+     */
+    public function storeMovement(Request $request, ItAsset $itAsset, ActivityLogger $activityLogger): RedirectResponse
+    {
+        $validated = $request->validate([
+            'document_type' => ['nullable', Rule::in(array_keys(ItAssetAssignment::DOCUMENT_TYPES))],
+            'document_number' => 'nullable|string|max:255',
+            'document_date' => 'nullable|date',
+            'assignee_name' => 'nullable|string|max:255',
+            'department' => 'nullable|string|max:255',
+            'location' => 'nullable|string|max:255',
+            'assigned_at' => 'required|date',
+            'performed_by_name' => 'nullable|string|max:255',
+            'note' => 'nullable|string|max:2000',
+        ]);
+
+        $itAsset->assignments()->create([
+            ...$validated,
+            'created_by' => $request->user()->id,
+        ]);
+
+        $itAsset->forceFill(array_filter([
+            'location' => $validated['location'] ?? null,
+            'department' => $validated['department'] ?? null,
+            'assigned_to' => $validated['assignee_name'] ?? null,
+        ], fn ($v) => $v !== null))->save();
+
+        $activityLogger->record(
+            action: 'updated',
+            description: "บันทึกการเคลื่อนไหวครุภัณฑ์ {$itAsset->asset_code}",
+            subjectType: 'it_asset',
+            subjectLabel: $itAsset->asset_code,
+        );
+
+        return back()->with('success', 'บันทึกประวัติการเคลื่อนไหวเรียบร้อยแล้ว');
     }
 
     // ── QR label ────────────────────────────────────────────────────────
@@ -393,16 +437,23 @@ class ItAssetController extends Controller
         return [
             'id' => $a->id,
             'asset_code' => $a->asset_code,
+            'erp_asset_code' => $a->erp_asset_code,
+            'asset_code_3d' => $a->asset_code_3d,
+            'old_asset_code' => $a->old_asset_code,
             'name' => $a->name,
             'category' => $a->category?->name,
             'brand' => $a->brand,
             'model' => $a->model,
+            'specifications' => $a->specifications,
+            'quantity' => $a->quantity,
+            'unit' => $a->unit,
             'serial_number' => $a->serial_number,
             'status' => $a->status,
             'status_label' => $a->statusLabel(),
             'department' => $a->department,
             'location' => $a->location,
             'assigned_to' => $a->assigned_to,
+            'supply_officer_name' => $a->supply_officer_name,
             'last_inspected_at' => $a->last_inspected_at?->toIso8601String(),
             'last_inspection_status' => $a->last_inspection_status,
             'photo_url' => $a->photo_path ? Storage::disk('public')->url($a->photo_path) : null,
@@ -446,9 +497,15 @@ class ItAssetController extends Controller
                 'performed_at' => $m->performed_at?->toDateString(), 'by' => $m->createdBy?->name,
             ])->all(),
             'assignments' => $a->assignments->map(fn ($x) => [
-                'id' => $x->id, 'assignee_name' => $x->assignee_name, 'department' => $x->department,
+                'id' => $x->id,
+                'document_type' => $x->document_type,
+                'document_type_label' => $x->documentTypeLabel(),
+                'document_number' => $x->document_number,
+                'document_date' => $x->document_date?->toDateString(),
+                'assignee_name' => $x->assignee_name, 'department' => $x->department,
                 'location' => $x->location, 'assigned_at' => $x->assigned_at?->toDateString(),
                 'returned_at' => $x->returned_at?->toDateString(), 'note' => $x->note,
+                'performed_by_name' => $x->performed_by_name,
             ])->all(),
             'software' => $a->software->map(fn ($s) => [
                 'id' => $s->id, 'name' => $s->name, 'version' => $s->version,
@@ -500,15 +557,22 @@ class ItAssetController extends Controller
     {
         return $request->validate([
             'asset_code' => ['nullable', 'string', 'max:255', Rule::unique('it_assets', 'asset_code')->ignore($ignoreId)->whereNull('deleted_at')],
+            'erp_asset_code' => 'nullable|string|max:255',
+            'asset_code_3d' => 'nullable|string|max:255',
+            'old_asset_code' => 'nullable|string|max:255',
             'name' => 'required|string|max:255',
             'it_asset_category_id' => 'nullable|exists:it_asset_categories,id',
             'brand' => 'nullable|string|max:255',
             'model' => 'nullable|string|max:255',
+            'specifications' => 'nullable|string|max:5000',
+            'quantity' => 'nullable|integer|min:0|max:999999',
+            'unit' => 'nullable|string|max:50',
             'serial_number' => 'nullable|string|max:255',
             'status' => ['required', Rule::in(array_keys(ItAsset::STATUSES))],
             'department' => 'nullable|string|max:255',
             'location' => 'nullable|string|max:255',
             'assigned_to' => 'nullable|string|max:255',
+            'supply_officer_name' => 'nullable|string|max:255',
             'purchased_at' => 'nullable|date',
             'price' => 'nullable|numeric|min:0|max:99999999',
             'warranty_until' => 'nullable|date',

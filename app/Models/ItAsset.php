@@ -30,15 +30,22 @@ class ItAsset extends Model
 
     protected $fillable = [
         'asset_code',
+        'erp_asset_code',
+        'asset_code_3d',
+        'old_asset_code',
         'name',
         'it_asset_category_id',
         'brand',
         'model',
+        'specifications',
+        'quantity',
+        'unit',
         'serial_number',
         'status',
         'department',
         'location',
         'assigned_to',
+        'supply_officer_name',
         'purchased_at',
         'price',
         'warranty_until',
@@ -52,6 +59,7 @@ class ItAsset extends Model
         'warranty_until' => 'date',
         'last_inspected_at' => 'datetime',
         'price' => 'decimal:2',
+        'quantity' => 'integer',
     ];
 
     protected $hidden = ['public_token'];
