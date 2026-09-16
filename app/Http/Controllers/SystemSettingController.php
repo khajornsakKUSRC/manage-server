@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\MonitoredService;
 use App\Models\SystemSetting;
 use App\Services\ActivityLogger;
 use App\Support\Permissions;
@@ -68,6 +69,8 @@ class SystemSettingController extends Controller
             ],
             'timezones' => timezone_identifiers_list(),
             'pages' => Permissions::PAGES,
+            'monitoredServices' => MonitoredService::orderBy('label')
+                ->get(['id', 'label', 'host', 'service_name']),
             'telegramStatus' => [
                 'main_configured' => filled(config('services.telegram.bot_token')) && filled(config('services.telegram.chat_id')),
                 'daily_report_configured' => filled(config('services.telegram_daily_report.bot_token')) && filled(config('services.telegram_daily_report.chat_id')),
@@ -103,6 +106,9 @@ class SystemSettingController extends Controller
             'notify_services_emails' => 'array|max:50',
             'notify_services_emails.*.email' => 'required|email|max:255|distinct:ignore_case',
             'notify_services_emails.*.notify' => 'boolean',
+            'notify_services_emails.*.all_services' => 'boolean',
+            'notify_services_emails.*.service_ids' => 'array',
+            'notify_services_emails.*.service_ids.*' => 'integer',
             'notify_services_telegram_enabled' => 'boolean',
             'session_timeout_minutes' => 'required|integer|min:1|max:43200',
             'disabled_pages' => 'array',
@@ -141,14 +147,26 @@ class SystemSettingController extends Controller
         $attributes['disabled_pages'] = $validated['disabled_pages'] ?? [];
 
         // Same FormData-drops-empty-arrays reasoning as disabled_pages
-        // above. Re-shape each row to exactly {email, notify:bool} so the
+        // above. Re-shape each row to exactly
+        // {email, notify:bool, all_services:bool, service_ids:int[]} so the
         // stored JSON never carries the "1"/"0" strings FormData sends for
         // booleans, and lowercase the address so the list can't hold the
-        // same recipient twice in different case.
+        // same recipient twice in different case. Unknown service ids
+        // (e.g. a service deleted between page load and save) are dropped
+        // here rather than failing validation on the whole form.
+        $validServiceIds = MonitoredService::pluck('id')->all();
+
         $attributes['notify_services_emails'] = collect($validated['notify_services_emails'] ?? [])
             ->map(fn (array $row) => [
                 'email' => strtolower(trim($row['email'])),
                 'notify' => filter_var($row['notify'] ?? false, FILTER_VALIDATE_BOOLEAN),
+                'all_services' => filter_var($row['all_services'] ?? true, FILTER_VALIDATE_BOOLEAN),
+                'service_ids' => collect($row['service_ids'] ?? [])
+                    ->map(fn ($id) => (int) $id)
+                    ->filter(fn (int $id) => in_array($id, $validServiceIds, true))
+                    ->unique()
+                    ->values()
+                    ->all(),
             ])
             ->values()
             ->all();
