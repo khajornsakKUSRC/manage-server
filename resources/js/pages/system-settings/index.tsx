@@ -18,7 +18,7 @@ import {
     Wrench,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -33,6 +33,12 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { notifyError, notifySuccess } from '@/lib/swal';
+import {
+    clearThemePreview,
+    previewTheme,
+    swatchColor,
+    THEME_OPTIONS,
+} from '@/lib/theme-palette';
 
 interface NotifyEmail {
     email: string;
@@ -57,6 +63,7 @@ interface Settings {
     favicon_url: string | null;
     timezone: string;
     footer_text: string | null;
+    theme_color: string;
     cpu_warning_pct: number;
     cpu_critical_pct: number;
     mem_warning_pct: number;
@@ -326,6 +333,30 @@ export default function Index({
     const [timezone, setTimezone] = useState(settings.timezone);
     const [footerText, setFooterText] = useState(settings.footer_text ?? '');
 
+    const [themeColor, setThemeColor] = useState(settings.theme_color);
+    // True whenever the on-screen preview (applied instantly, see
+    // previewTheme()) doesn't match what's actually saved — so we know to
+    // undo it on unmount if the admin navigates away without saving,
+    // rather than leaving another page stuck showing an unsaved theme. A
+    // ref (not state) because only the unmount cleanup below reads it —
+    // state here would fire that effect's cleanup on every change instead
+    // of only on unmount.
+    const themePreviewDirtyRef = useRef(false);
+
+    const chooseTheme = (key: string) => {
+        previewTheme(key);
+        setThemeColor(key);
+        themePreviewDirtyRef.current = key !== settings.theme_color;
+    };
+
+    useEffect(() => {
+        return () => {
+            if (themePreviewDirtyRef.current) {
+                clearThemePreview();
+            }
+        };
+    }, []);
+
     const [cpuWarning, setCpuWarning] = useState(settings.cpu_warning_pct);
     const [cpuCritical, setCpuCritical] = useState(settings.cpu_critical_pct);
     const [memWarning, setMemWarning] = useState(settings.mem_warning_pct);
@@ -593,6 +624,7 @@ export default function Index({
                 remove_favicon: removeFavicon,
                 timezone,
                 footer_text: footerText,
+                theme_color: themeColor,
                 cpu_warning_pct: cpuWarning,
                 cpu_critical_pct: cpuCritical,
                 mem_warning_pct: memWarning,
@@ -645,6 +677,10 @@ export default function Index({
                     setRemoveFavicon(false);
                     setItRepairEmailLogoFile(null);
                     setRemoveItRepairEmailLogo(false);
+                    // The on-screen preview now matches what's persisted —
+                    // safe to leave applied without the unmount cleanup
+                    // reverting it.
+                    themePreviewDirtyRef.current = false;
                 },
                 onError: (formErrors) => {
                     setErrors(formErrors as Record<string, string>);
@@ -772,6 +808,46 @@ export default function Index({
                         <CardTitle>Branding</CardTitle>
                     </CardHeader>
                     <CardContent className="grid gap-6 sm:grid-cols-2">
+                        <div className="space-y-2 sm:col-span-2">
+                            <Label>Theme Color</Label>
+                            <div className="flex flex-wrap gap-3">
+                                {Object.entries(THEME_OPTIONS).map(
+                                    ([key, option]) => (
+                                        <button
+                                            key={key}
+                                            type="button"
+                                            onClick={() => chooseTheme(key)}
+                                            className={`flex flex-col items-center gap-1.5 rounded-lg border-2 p-2 transition-colors ${
+                                                themeColor === key
+                                                    ? 'border-primary'
+                                                    : 'border-transparent hover:border-border'
+                                            }`}
+                                        >
+                                            <span
+                                                className="h-8 w-8 rounded-full border shadow-sm"
+                                                style={{
+                                                    backgroundColor:
+                                                        swatchColor(key),
+                                                }}
+                                            />
+                                            <span className="text-xs text-muted-foreground">
+                                                {option.label}
+                                            </span>
+                                        </button>
+                                    ),
+                                )}
+                            </div>
+                            {errors.theme_color && (
+                                <p className="text-xs text-red-500">
+                                    {errors.theme_color}
+                                </p>
+                            )}
+                            <p className="text-xs text-muted-foreground">
+                                Applies instantly as a preview — click Save
+                                below to make it permanent for everyone.
+                            </p>
+                        </div>
+
                         <div className="space-y-2 sm:col-span-2">
                             <Label>Website Icon (Favicon)</Label>
                             <div className="flex items-center gap-3">

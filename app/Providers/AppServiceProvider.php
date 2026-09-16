@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Models\SystemSetting;
 use App\Models\User;
 use App\Services\ActivityLogger;
+use App\Support\ThemePalette;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Support\Facades\Date;
@@ -32,21 +33,24 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
         $this->logLoginActivity();
-        $this->shareFavicon();
+        $this->shareBranding();
     }
 
     /**
-     * Injects the admin-uploaded favicon (Settings → Branding) into the
-     * root Blade view's <link rel="icon"> tag. Done server-side here —
-     * rather than via the client-side Inertia "siteSettings" prop — so the
-     * very first HTML response already has the right icon, with no flash.
+     * Injects the admin-uploaded favicon and chosen colour theme (Settings
+     * → Branding / Appearance) into the root Blade view. Done server-side
+     * here — rather than via the client-side Inertia "siteSettings" prop —
+     * so the very first HTML response already has the right icon and
+     * colours, with no flash of the default favicon/theme.
      */
-    protected function shareFavicon(): void
+    protected function shareBranding(): void
     {
         View::composer('app', function ($view): void {
-            $path = SystemSetting::current()->favicon_path;
+            $settings = SystemSetting::current();
 
-            $view->with('faviconUrl', $path ? Storage::disk('public')->url($path) : null);
+            $view->with('faviconUrl', $settings->favicon_path ? Storage::disk('public')->url($settings->favicon_path) : null);
+            $view->with('themeStyleTag', ThemePalette::styleTag($settings->theme_color));
+            $view->with('themeBackground', ThemePalette::backgroundColors($settings->theme_color));
         });
     }
 

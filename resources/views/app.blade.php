@@ -24,14 +24,15 @@
             })();
         </script>
 
-        {{-- Inline style to set the HTML background color based on our theme in app.css --}}
+        {{-- Inline style to set the HTML background color based on the
+             chosen theme (Settings → Appearance) before app.css loads. --}}
         <style>
             html {
-                background-color: oklch(0.97 0.008 156);
+                background-color: {{ $themeBackground['light'] }};
             }
 
             html.dark {
-                background-color: oklch(0.13 0.006 156);
+                background-color: {{ $themeBackground['dark'] }};
             }
         </style>
 
@@ -47,6 +48,13 @@
 
         @viteReactRefresh
         @vite(['resources/css/app.css', 'resources/js/app.tsx', "resources/js/pages/{$page['component']}.tsx"])
+
+        {{-- Overrides app.css's default (blue-purple) colour tokens when
+             Settings → Appearance has a different theme selected. After
+             @vite so it wins the cascade; empty string for the default
+             theme. --}}
+        {!! $themeStyleTag !!}
+
         <x-inertia::head>
             <title>{{ config('app.name', 'Laravel') }}</title>
         </x-inertia::head>

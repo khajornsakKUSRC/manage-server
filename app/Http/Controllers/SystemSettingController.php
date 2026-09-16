@@ -6,6 +6,7 @@ use App\Models\MonitoredService;
 use App\Models\SystemSetting;
 use App\Services\ActivityLogger;
 use App\Support\Permissions;
+use App\Support\ThemePalette;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -28,6 +29,7 @@ class SystemSettingController extends Controller
                     : null,
                 'timezone' => $settings->timezone,
                 'footer_text' => $settings->footer_text,
+                'theme_color' => $settings->theme_color,
                 'cpu_warning_pct' => $settings->cpu_warning_pct,
                 'cpu_critical_pct' => $settings->cpu_critical_pct,
                 'mem_warning_pct' => $settings->mem_warning_pct,
@@ -87,6 +89,7 @@ class SystemSettingController extends Controller
             'remove_favicon' => 'boolean',
             'timezone' => ['required', 'string', 'timezone'],
             'footer_text' => 'nullable|string|max:255',
+            'theme_color' => ['required', Rule::in(ThemePalette::keys())],
             'cpu_warning_pct' => 'required|integer|min:0|max:100',
             'cpu_critical_pct' => 'required|integer|min:0|max:100|gte:cpu_warning_pct',
             'mem_warning_pct' => 'required|integer|min:0|max:100',

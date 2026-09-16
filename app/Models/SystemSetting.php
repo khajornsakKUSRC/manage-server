@@ -16,6 +16,7 @@ class SystemSetting extends Model
         'favicon_path',
         'timezone',
         'footer_text',
+        'theme_color',
         'cpu_warning_pct',
         'cpu_critical_pct',
         'mem_warning_pct',
