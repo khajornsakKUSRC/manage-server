@@ -259,7 +259,7 @@ export default function Index({
                     </div>
                     <Button size="sm" variant="outline" asChild>
                         <a
-                            href="/it-repair/new"
+                            href="/manage-server/it-repair/new"
                             target="_blank"
                             rel="noreferrer"
                         >

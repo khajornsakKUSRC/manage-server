@@ -1,4 +1,5 @@
 import { Link, usePage } from '@inertiajs/react';
+import { bp } from '@/lib/base-path';
 import { home } from '@/routes';
 import type { AuthLayoutProps } from '@/types';
 
@@ -18,7 +19,7 @@ export default function AuthSplitLayout({
                     className="relative z-20 flex items-center text-lg font-medium"
                 >
                     <img
-                        src="/image/manage-server-logo.png"
+                        src={bp('/image/manage-server-logo.png')}
                         alt={name}
                         className="mr-2 size-8 object-contain"
                     />
@@ -32,7 +33,7 @@ export default function AuthSplitLayout({
                         className="relative z-20 flex items-center justify-center lg:hidden"
                     >
                         <img
-                            src="/image/manage-server-logo.png"
+                            src={bp('/image/manage-server-logo.png')}
                             alt={name}
                             className="h-10 object-contain sm:h-12"
                         />

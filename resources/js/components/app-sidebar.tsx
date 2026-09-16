@@ -35,6 +35,7 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
+import { bp } from '@/lib/base-path';
 import { dashboard } from '@/routes';
 import type { NavItem } from '@/types';
 
@@ -52,13 +53,13 @@ const mainNavItems: PermissionedNavItem[] = [
     },
     {
         title: 'Hosts',
-        href: '/hosts',
+        href: bp('/hosts'),
         icon: Server,
         permission: 'hosts',
     },
     {
         title: 'VMs',
-        href: '/vms',
+        href: bp('/vms'),
         icon: Monitor,
         permission: 'vms',
     },
@@ -70,49 +71,49 @@ const mainNavItems: PermissionedNavItem[] = [
     // },
     {
         title: 'Appliance Health',
-        href: '/appliance',
+        href: bp('/appliance'),
         icon: Activity,
         permission: 'appliance',
     },
     {
         title: 'Daily Report',
-        href: '/daily-reports',
+        href: bp('/daily-reports'),
         icon: ClipboardList,
         permission: 'daily-reports',
     },
     {
         title: 'Calendar Notice',
-        href: '/calendar-notice',
+        href: bp('/calendar-notice'),
         icon: CalendarClock,
         permission: 'calendar-notice',
     },
-    // {
-    //     title: 'IT Repair',
-    //     href: '/it-repair',
-    //     icon: Wrench,
-    //     permission: 'it-repair',
-    // },
-    // {
-    //     title: 'Service Evaluation',
-    //     href: '/it-repair-evaluation',
-    //     icon: Star,
-    //     permission: 'it-repair-evaluation',
-    // },
+    {
+        title: 'IT Repair',
+        href: bp('/it-repair'),
+        icon: Wrench,
+        permission: 'it-repair',
+    },
+    {
+        title: 'Service Evaluation',
+        href: bp('/it-repair-evaluation'),
+        icon: Star,
+        permission: 'it-repair-evaluation',
+    },
     {
         title: 'Alarm Notification',
-        href: '/alarms',
+        href: bp('/alarms'),
         icon: BellRing,
         permission: 'alarms',
     },
     {
         title: 'Datastore',
-        href: '/datastores',
+        href: bp('/datastores'),
         icon: Database,
         permission: 'datastores',
     },
     {
         title: 'Network Infrastructure',
-        href: '/network-monitors',
+        href: bp('/network-monitors'),
         icon: Network,
         permission: 'network-infrastructure',
     },
@@ -124,49 +125,49 @@ const mainNavItems: PermissionedNavItem[] = [
     // },
     {
         title: 'Performance',
-        href: '/performance',
+        href: bp('/performance'),
         icon: LineChart,
         permission: 'performance',
     },
     {
         title: 'Smart Detection',
-        href: '/smart-detection',
+        href: bp('/smart-detection'),
         icon: Radar,
         permission: 'smart-detection',
     },
     {
         title: 'Mod Security',
-        href: '/modsecurity',
+        href: bp('/modsecurity'),
         icon: ShieldAlert,
         permission: 'modsecurity',
     },
     {
         title: 'Services',
-        href: '/services',
+        href: bp('/services'),
         icon: ServerCog,
         permission: 'services',
     },
-    // {
-    //     title: 'IT Assets',
-    //     href: '/it-assets',
-    //     icon: Boxes,
-    //     permission: 'it-assets',
-    // },
+    {
+        title: 'IT Assets',
+        href: bp('/it-assets'),
+        icon: Boxes,
+        permission: 'it-assets',
+    },
     {
         title: 'Manage Users',
-        href: '/users',
+        href: bp('/users'),
         icon: Users,
         adminOnly: true,
     },
     {
         title: 'Activity Log',
-        href: '/activity-log',
+        href: bp('/activity-log'),
         icon: History,
         adminOnly: true,
     },
     {
         title: 'Settings',
-        href: '/system-settings',
+        href: bp('/system-settings'),
         icon: Settings,
         adminOnly: true,
     },
@@ -203,11 +204,13 @@ export function AppSidebar() {
         );
     });
 
+    // item.href is now bp()-prefixed (e.g. "/manage-server/alarms"), so the
+    // comparison target has to go through bp() too rather than the bare path.
     const hasAlarmsAccess = visibleNavItems.some(
-        (item) => item.href === '/alarms',
+        (item) => item.href === bp('/alarms'),
     );
     const hasSmartDetectionAccess = visibleNavItems.some(
-        (item) => item.href === '/smart-detection',
+        (item) => item.href === bp('/smart-detection'),
     );
 
     const [alarmCount, setAlarmCount] = useState(0);
@@ -286,10 +289,10 @@ export function AppSidebar() {
         // Keeps blinking the whole time there's at least one unacknowledged
         // item — like an unread-message badge — rather than just a brief
         // flash, so it stays noticeable until it's dealt with.
-        ...(item.href === '/alarms'
+        ...(item.href === bp('/alarms')
             ? { badge: alarmCount, badgePulse: alarmCount > 0 }
             : null),
-        ...(item.href === '/smart-detection'
+        ...(item.href === bp('/smart-detection')
             ? {
                 badge: smartDetectionCount,
                 badgePulse: smartDetectionCount > 0,

@@ -7,6 +7,7 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import { bp } from '@/lib/base-path';
 import { home } from '@/routes';
 
 export default function AuthCardLayout({
@@ -27,7 +28,7 @@ export default function AuthCardLayout({
                 >
                     <div className="flex h-9 w-9 items-center justify-center">
                         <img
-                            src="/image/manage-server-logo.png"
+                            src={bp('/image/manage-server-logo.png')}
                             alt="Manage Server"
                             className="size-9 object-contain"
                         />
