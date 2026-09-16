@@ -38,9 +38,9 @@
         @if ($faviconUrl ?? null)
             <link rel="icon" href="{{ $faviconUrl }}">
         @else
-            <link rel="icon" href="/favicon.ico" sizes="any">
-            <link rel="icon" href="/favicon-32x32.png" type="image/png" sizes="32x32">
-            <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+            <link rel="icon" href="{{ Illuminate\Support\Facades\Request::getBaseUrl() }}/favicon.ico" sizes="any">
+            <link rel="icon" href="{{ Illuminate\Support\Facades\Request::getBaseUrl() }}/favicon-32x32.png" type="image/png" sizes="32x32">
+            <link rel="apple-touch-icon" href="{{ Illuminate\Support\Facades\Request::getBaseUrl() }}/apple-touch-icon.png">
         @endif
 
         @fonts

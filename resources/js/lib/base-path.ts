@@ -1,3 +1,5 @@
+import { router } from '@inertiajs/react';
+
 /**
  * Sub-path the app is served under — "" at a domain root, or "/manage-server"
  * when mounted at https://services.src.ku.ac.th/manage-server. Injected by
@@ -84,6 +86,31 @@ export function installBasePathShims(): void {
         // @ts-expect-error passthrough of the native variadic signature
         return nativeOpen.call(this, method, next, ...rest);
     };
+
+    // Inertia's router — get/post/put/patch/delete/reload, and every
+    // useForm() submission (post/put/etc there call router.post/put under
+    // the hood), all delegate to this one visit(href, options) internally.
+    // Patching it here covers every hand-written router.post('/x', ...) /
+    // useForm().post('/x') call in the app without each call site having
+    // to bp() its own literal path — the XHR shim above isn't enough on
+    // its own, since Inertia builds the request URL from `href` before an
+    // XHR ever gets opened.
+    const nativeVisit = router.visit.bind(router);
+
+    router.visit = ((
+        href: Parameters<typeof router.visit>[0],
+        options?: Parameters<typeof router.visit>[1],
+    ) => {
+        if (typeof href === 'string') {
+            return nativeVisit(bp(href), options);
+        }
+
+        if (href && typeof href === 'object' && 'url' in href) {
+            return nativeVisit({ ...href, url: bp(href.url) }, options);
+        }
+
+        return nativeVisit(href, options);
+    }) as typeof router.visit;
 
     // history — keep the address bar under the sub-path even if something
     // pushes a bare "/x" (Inertia's own pushes already carry the prefixed

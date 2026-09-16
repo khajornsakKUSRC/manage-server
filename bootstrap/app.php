@@ -28,19 +28,24 @@ return Application::configure(basePath: dirname(__DIR__))
         // in the default trusted set) is what makes url()/route()/asset()
         // and Inertia's page.url come back with the prefix.
         //
-        // Trust localhost + the private ranges a front proxy normally sits
-        // on. Add the real proxy IP here if it's outside these. env() is
-        // deliberately not used — this closure runs before .env is loaded
-        // on the HTTP path.
+        // In production (services.src.ku.ac.th) nginx terminates the public
+        // connection directly — there is no private-network load balancer
+        // in front of it, so a real visitor's REMOTE_ADDR is never in a
+        // trusted-proxy CIDR range, and the X-Forwarded-Prefix header above
+        // (and X-Forwarded-Host/Proto/Port/For) never got trusted. That
+        // silently dropped the /manage-server prefix from every generated
+        // URL — redirects, route()/asset(), Inertia's page.url — for every
+        // real visitor.
+        //
+        // '*' makes nginx itself (not a distinct private-IP proxy) the
+        // trust boundary, which only holds because the nginx location
+        // block for this site (ku_project.test.conf) overwrites any
+        // client-supplied X-Forwarded-Prefix/Host/Proto/Port/For before
+        // passing the request to PHP-FPM — otherwise a visitor could spoof
+        // those headers directly. Don't set this to '*' without that nginx
+        // side in place.
         $middleware->prepend(HandleUrlPrefix::class);
-        $middleware->trustProxies(at: [
-            '127.0.0.1',
-            '::1',
-            '10.0.0.0/8',
-            '172.16.0.0/12',
-            '192.168.0.0/16',
-            'fc00::/7',
-        ]);
+        $middleware->trustProxies(at: '*');
 
         // Must run before Laravel's own StartSession (part of the default
         // `web` group) reads session.lifetime, so prepended rather than
