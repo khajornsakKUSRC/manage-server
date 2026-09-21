@@ -44,6 +44,7 @@ type PermissionedNavItem = NavItem & {
     adminOnly?: boolean;
 };
 
+
 const mainNavItems: PermissionedNavItem[] = [
     {
         title: 'Dashboard',
