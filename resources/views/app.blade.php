@@ -24,29 +24,41 @@
             })();
         </script>
 
-        {{-- Inline style to set the HTML background color based on our theme in app.css --}}
+        {{-- Inline style to set the HTML background color based on the
+             chosen theme (Settings → Appearance) before app.css loads. --}}
         <style>
             html {
-                background-color: oklch(0.97 0.008 156);
+                background-color: {{ $themeBackground['light'] }};
             }
 
             html.dark {
-                background-color: oklch(0.13 0.006 156);
+                background-color: {{ $themeBackground['dark'] }};
             }
         </style>
 
         @if ($faviconUrl ?? null)
             <link rel="icon" href="{{ $faviconUrl }}">
         @else
-            <link rel="icon" href="/favicon.ico" sizes="any">
-            <link rel="icon" href="/favicon-32x32.png" type="image/png" sizes="32x32">
-            <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+            <link rel="icon" href="{{ Illuminate\Support\Facades\Request::getBaseUrl() }}/favicon.ico" sizes="any">
+            <link rel="icon" href="{{ Illuminate\Support\Facades\Request::getBaseUrl() }}/favicon-32x32.png" type="image/png" sizes="32x32">
+            <link rel="apple-touch-icon" href="{{ Illuminate\Support\Facades\Request::getBaseUrl() }}/apple-touch-icon.png">
         @endif
 
-        @fonts
+        {{-- Laravel 13's self-hosted @fonts/Vite::fonts() isn't available on
+             Laravel 12, so Instrument Sans loads from Bunny Fonts' CDN
+             instead (the pre-13 Laravel starter-kit approach). --}}
+        <link rel="preconnect" href="https://fonts.bunny.net">
+        <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" />
 
         @viteReactRefresh
         @vite(['resources/css/app.css', 'resources/js/app.tsx', "resources/js/pages/{$page['component']}.tsx"])
+
+        {{-- Overrides app.css's default (blue-purple) colour tokens when
+             Settings → Appearance has a different theme selected. After
+             @vite so it wins the cascade; empty string for the default
+             theme. --}}
+        {!! $themeStyleTag !!}
+
         <x-inertia::head>
             <title>{{ config('app.name', 'Laravel') }}</title>
         </x-inertia::head>

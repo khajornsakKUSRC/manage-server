@@ -62,82 +62,82 @@
 }
 
 :root {
-    /* A faint green tint (not pure white) behind pure-white cards — gives
+    /* A faint indigo tint (not pure white) behind pure-white cards — gives
        the border/shadow something to read against instead of white-on-white,
-       and carries Kasetsart University's green identity into the chrome. */
-    --background: oklch(0.97 0.008 156);
+       and carries the blue-purple brand identity into the chrome. */
+    --background: oklch(0.97 0.01 275);
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
     --card-foreground: oklch(0.145 0 0);
     --popover: oklch(1 0 0);
     --popover-foreground: oklch(0.145 0 0);
-    /* Kasetsart University leaf green — the brand colour for buttons, active
+    /* Blue-purple (indigo/violet) — the brand colour for buttons, active
        nav items, links and focus rings. White foreground clears AA on it. */
-    --primary: oklch(0.53 0.13 156);
+    --primary: oklch(0.53 0.19 275);
     --primary-foreground: oklch(0.985 0 0);
     --secondary: oklch(0.97 0 0);
     --secondary-foreground: oklch(0.205 0 0);
     --muted: oklch(0.97 0 0);
     --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.945 0.03 156);
-    --accent-foreground: oklch(0.42 0.11 156);
+    --accent: oklch(0.945 0.04 275);
+    --accent-foreground: oklch(0.42 0.15 275);
     --destructive: oklch(0.577 0.245 27.325);
     --destructive-foreground: oklch(0.577 0.245 27.325);
     --border: oklch(0.922 0 0);
     --input: oklch(0.922 0 0);
-    --ring: oklch(0.55 0.13 156);
-    --chart-1: oklch(0.55 0.13 156);
+    --ring: oklch(0.55 0.19 275);
+    --chart-1: oklch(0.55 0.19 275);
     --chart-2: oklch(0.6 0.118 184.704);
     --chart-3: oklch(0.398 0.07 227.392);
     --chart-4: oklch(0.828 0.189 84.429);
     --chart-5: oklch(0.769 0.188 70.08);
     --radius: 0.625rem;
-    --sidebar: oklch(0.985 0.004 156);
+    --sidebar: oklch(0.985 0.006 275);
     --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.53 0.13 156);
+    --sidebar-primary: oklch(0.53 0.19 275);
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.945 0.03 156);
-    --sidebar-accent-foreground: oklch(0.42 0.11 156);
+    --sidebar-accent: oklch(0.945 0.04 275);
+    --sidebar-accent-foreground: oklch(0.42 0.15 275);
     --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.55 0.13 156);
+    --sidebar-ring: oklch(0.55 0.19 275);
 }
 
 .dark {
     /* Same elevation idea as light mode, inverted: cards read a step
        lighter than the page instead of blending into it. Neutrals carry a
-       faint green tint to match the Kasetsart University brand. */
-    --background: oklch(0.13 0.006 156);
+       faint indigo tint to match the blue-purple brand. */
+    --background: oklch(0.13 0.014 275);
     --foreground: oklch(0.985 0 0);
-    --card: oklch(0.19 0.01 156);
+    --card: oklch(0.19 0.02 275);
     --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.19 0.01 156);
+    --popover: oklch(0.19 0.02 275);
     --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.58 0.135 156);
+    --primary: oklch(0.62 0.19 275);
     --primary-foreground: oklch(0.985 0 0);
     --secondary: oklch(0.269 0 0);
     --secondary-foreground: oklch(0.985 0 0);
     --muted: oklch(0.269 0 0);
     --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.32 0.055 156);
-    --accent-foreground: oklch(0.88 0.11 156);
+    --accent: oklch(0.32 0.08 275);
+    --accent-foreground: oklch(0.88 0.13 275);
     --destructive: oklch(0.396 0.141 25.723);
     --destructive-foreground: oklch(0.637 0.237 25.331);
     --border: oklch(0.269 0 0);
     --input: oklch(0.269 0 0);
-    --ring: oklch(0.62 0.13 158);
-    --chart-1: oklch(0.62 0.14 158);
+    --ring: oklch(0.66 0.19 277);
+    --chart-1: oklch(0.66 0.19 277);
     --chart-2: oklch(0.72 0.14 195);
     --chart-3: oklch(0.769 0.188 70.08);
     --chart-4: oklch(0.627 0.265 303.9);
     --chart-5: oklch(0.645 0.246 16.439);
-    --sidebar: oklch(0.17 0.008 156);
+    --sidebar: oklch(0.17 0.016 275);
     --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.58 0.135 156);
+    --sidebar-primary: oklch(0.62 0.19 275);
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.32 0.055 156);
-    --sidebar-accent-foreground: oklch(0.88 0.11 156);
+    --sidebar-accent: oklch(0.32 0.08 275);
+    --sidebar-accent-foreground: oklch(0.88 0.13 275);
     --sidebar-border: oklch(0.269 0 0);
-    --sidebar-ring: oklch(0.62 0.13 158);
+    --sidebar-ring: oklch(0.66 0.19 277);
 }
 
 @layer base {
@@ -165,8 +165,8 @@
     position: absolute;
     inset: -15px;
     border-radius: 50%;
-    /* Kasetsart University green — keep in step with --primary in :root. */
-    border: 15px solid oklch(0.53 0.13 156);
+    /* Blue-purple brand colour — keep in step with --primary in :root. */
+    border: 15px solid oklch(0.53 0.19 275);
     animation: loader-spin 2s infinite linear;
 }
 /* Sidebar "Alarm Notification" badge — flashes briefly whenever the

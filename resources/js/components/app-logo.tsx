@@ -1,4 +1,5 @@
 import { usePage } from '@inertiajs/react';
+import { bp } from '@/lib/base-path';
 
 export default function AppLogo() {
     const { name } = usePage().props;
@@ -7,7 +8,7 @@ export default function AppLogo() {
         <>
             <div className="flex aspect-square size-8 items-center justify-center overflow-hidden rounded-md">
                 <img
-                    src="/image/manage-server-logo.png"
+                    src={bp('/image/manage-server-logo.png')}
                     alt={name}
                     className="h-full w-full object-contain"
                 />

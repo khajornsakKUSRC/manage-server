@@ -30,7 +30,7 @@ class ServiceNotificationService
     public function checkAndNotify(): int
     {
         $settings = SystemSetting::current();
-        $recipients = $this->parseRecipients($settings->notify_services_emails);
+        $emailRows = $settings->notify_services_emails;
 
         $sent = 0;
         $currentlyDownIds = [];
@@ -54,6 +54,7 @@ class ServiceNotificationService
                 continue;
             }
 
+            $recipients = $this->recipientsFor($service, $emailRows);
             $notifiedAny = false;
 
             if ($settings->notify_services_telegram_enabled) {
@@ -98,18 +99,22 @@ class ServiceNotificationService
     }
 
     /**
-     * Pulls the send-able addresses out of Settings → "Notify Email":
-     * an address only counts once it's both in the list AND has its
-     * "notify" permission turned on. Anything without a valid email or
-     * with notify off is dropped.
+     * The send-able addresses for one down service, out of Settings →
+     * "Notify Email". An address counts only when it's in the list, has
+     * its "notify" permission turned on, AND is scoped to this service —
+     * either "all services" or with this service's id in its
+     * service_ids. Missing all_services defaults to true so rows written
+     * before per-service scoping still receive everything.
      *
-     * @param  array<int, array{email?: string, notify?: bool}>|null  $rows
+     * @param  array<int, array{email?: string, notify?: bool, all_services?: bool, service_ids?: array<int, int|string>}>|null  $rows
      * @return array<int, string>
      */
-    protected function parseRecipients(?array $rows): array
+    protected function recipientsFor(MonitoredService $service, ?array $rows): array
     {
         return collect($rows ?? [])
             ->filter(fn ($row) => is_array($row) && ! empty($row['notify']))
+            ->filter(fn (array $row) => ($row['all_services'] ?? true)
+                || in_array($service->id, array_map('intval', $row['service_ids'] ?? []), true))
             ->map(fn (array $row) => trim((string) ($row['email'] ?? '')))
             ->filter(fn (string $email) => filter_var($email, FILTER_VALIDATE_EMAIL) !== false)
             ->unique()

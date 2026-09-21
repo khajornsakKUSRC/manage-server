@@ -203,6 +203,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::delete('it-assets/{itAsset}', [ItAssetController::class, 'destroy'])->name('it-assets.destroy');
         Route::get('it-assets/{itAsset}/label', [ItAssetController::class, 'label'])->name('it-assets.label');
         Route::post('it-assets/{itAsset}/inspections', [ItAssetController::class, 'storeInspection'])->name('it-assets.inspections.store');
+        Route::post('it-assets/{itAsset}/movements', [ItAssetController::class, 'storeMovement'])->name('it-assets.movements.store');
     });
 
     // User management and the Activity Log (every user's actions + IPs) are

@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
@@ -17,9 +16,17 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property string|null $description
  * @property string $color
  */
-#[Fillable(['name', 'description', 'color'])]
 class Role extends Model
 {
+    /**
+     * Laravel 13's #[Fillable(...)] class attribute isn't recognized by
+     * Laravel 12 — using the traditional property instead so this works on
+     * both.
+     *
+     * @var array<int, string>
+     */
+    protected $fillable = ['name', 'description', 'color'];
+
     /**
      * @return BelongsToMany<User, $this>
      */

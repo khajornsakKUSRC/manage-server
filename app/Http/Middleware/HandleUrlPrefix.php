@@ -36,8 +36,13 @@ class HandleUrlPrefix
         $prefix = '/'.$prefix;
 
         // 1. Make generated URLs prefix-aware. A real proxy's own
-        //    X-Forwarded-Prefix, if any, wins.
-        if (! $request->headers->has('X-Forwarded-Prefix')) {
+        //    X-Forwarded-Prefix, if any, wins — but nginx overwrites any
+        //    client-supplied value to "" before it reaches PHP (see
+        //    ku_project.test.conf), so blank() here (not has()) is what
+        //    actually lets us fall through to setting our own value
+        //    instead of trusting an empty, cleared header as "already
+        //    set".
+        if (blank($request->headers->get('X-Forwarded-Prefix'))) {
             $request->headers->set('X-Forwarded-Prefix', $prefix);
             $request->server->set('HTTP_X_FORWARDED_PREFIX', $prefix);
         }

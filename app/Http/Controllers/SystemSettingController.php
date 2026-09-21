@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\MonitoredService;
 use App\Models\SystemSetting;
 use App\Services\ActivityLogger;
 use App\Support\Permissions;
+use App\Support\ThemePalette;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -27,6 +29,7 @@ class SystemSettingController extends Controller
                     : null,
                 'timezone' => $settings->timezone,
                 'footer_text' => $settings->footer_text,
+                'theme_color' => $settings->theme_color,
                 'cpu_warning_pct' => $settings->cpu_warning_pct,
                 'cpu_critical_pct' => $settings->cpu_critical_pct,
                 'mem_warning_pct' => $settings->mem_warning_pct,
@@ -68,6 +71,8 @@ class SystemSettingController extends Controller
             ],
             'timezones' => timezone_identifiers_list(),
             'pages' => Permissions::PAGES,
+            'monitoredServices' => MonitoredService::orderBy('label')
+                ->get(['id', 'label', 'host', 'service_name']),
             'telegramStatus' => [
                 'main_configured' => filled(config('services.telegram.bot_token')) && filled(config('services.telegram.chat_id')),
                 'daily_report_configured' => filled(config('services.telegram_daily_report.bot_token')) && filled(config('services.telegram_daily_report.chat_id')),
@@ -84,6 +89,7 @@ class SystemSettingController extends Controller
             'remove_favicon' => 'boolean',
             'timezone' => ['required', 'string', 'timezone'],
             'footer_text' => 'nullable|string|max:255',
+            'theme_color' => ['required', Rule::in(ThemePalette::keys())],
             'cpu_warning_pct' => 'required|integer|min:0|max:100',
             'cpu_critical_pct' => 'required|integer|min:0|max:100|gte:cpu_warning_pct',
             'mem_warning_pct' => 'required|integer|min:0|max:100',
@@ -103,6 +109,9 @@ class SystemSettingController extends Controller
             'notify_services_emails' => 'array|max:50',
             'notify_services_emails.*.email' => 'required|email|max:255|distinct:ignore_case',
             'notify_services_emails.*.notify' => 'boolean',
+            'notify_services_emails.*.all_services' => 'boolean',
+            'notify_services_emails.*.service_ids' => 'array',
+            'notify_services_emails.*.service_ids.*' => 'integer',
             'notify_services_telegram_enabled' => 'boolean',
             'session_timeout_minutes' => 'required|integer|min:1|max:43200',
             'disabled_pages' => 'array',
@@ -141,14 +150,26 @@ class SystemSettingController extends Controller
         $attributes['disabled_pages'] = $validated['disabled_pages'] ?? [];
 
         // Same FormData-drops-empty-arrays reasoning as disabled_pages
-        // above. Re-shape each row to exactly {email, notify:bool} so the
+        // above. Re-shape each row to exactly
+        // {email, notify:bool, all_services:bool, service_ids:int[]} so the
         // stored JSON never carries the "1"/"0" strings FormData sends for
         // booleans, and lowercase the address so the list can't hold the
-        // same recipient twice in different case.
+        // same recipient twice in different case. Unknown service ids
+        // (e.g. a service deleted between page load and save) are dropped
+        // here rather than failing validation on the whole form.
+        $validServiceIds = MonitoredService::pluck('id')->all();
+
         $attributes['notify_services_emails'] = collect($validated['notify_services_emails'] ?? [])
             ->map(fn (array $row) => [
                 'email' => strtolower(trim($row['email'])),
                 'notify' => filter_var($row['notify'] ?? false, FILTER_VALIDATE_BOOLEAN),
+                'all_services' => filter_var($row['all_services'] ?? true, FILTER_VALIDATE_BOOLEAN),
+                'service_ids' => collect($row['service_ids'] ?? [])
+                    ->map(fn ($id) => (int) $id)
+                    ->filter(fn (int $id) => in_array($id, $validServiceIds, true))
+                    ->unique()
+                    ->values()
+                    ->all(),
             ])
             ->values()
             ->all();

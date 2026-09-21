@@ -1,5 +1,6 @@
 import { Link } from '@inertiajs/react';
 import { SiteFooter } from '@/components/site-footer';
+import { bp } from '@/lib/base-path';
 import { home } from '@/routes';
 import type { AuthLayoutProps } from '@/types';
 
@@ -18,7 +19,7 @@ export default function AuthSimpleLayout({
                             className="flex flex-col items-center gap-2 font-medium"
                         >
                             <img
-                                src="/image/manage-server-logo.png"
+                                src={bp('/image/manage-server-logo.png')}
                                 alt="Manage Server"
                                 className="h-28 w-28 object-contain"
                             />

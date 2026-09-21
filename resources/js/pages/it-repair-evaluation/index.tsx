@@ -20,6 +20,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import { bp } from '@/lib/base-path';
 
 interface Criterion {
     id: number;
@@ -153,7 +154,7 @@ export default function Index({
         exportQuery.set('service_type', filters.service_type);
     }
 
-    const pdfUrl = `/it-repair-evaluation/export?${exportQuery.toString()}`;
+    const pdfUrl = bp(`/it-repair-evaluation/export?${exportQuery.toString()}`);
     const previewUrl = `${pdfUrl}&format=html`;
 
     return (
@@ -206,9 +207,7 @@ export default function Index({
                             <Label className="text-xs">เดือน</Label>
                             <Select
                                 value={
-                                    filters.month
-                                        ? String(filters.month)
-                                        : ALL
+                                    filters.month ? String(filters.month) : ALL
                                 }
                                 onValueChange={(v) =>
                                     applyFilters({
@@ -294,9 +293,7 @@ export default function Index({
                                 {rows.length === 0 ? (
                                     <tr>
                                         <td
-                                            colSpan={
-                                                summaryCriteria.length + 3
-                                            }
+                                            colSpan={summaryCriteria.length + 3}
                                             className="px-4 py-10 text-center text-muted-foreground"
                                         >
                                             ยังไม่มีข้อมูลการประเมินตามเงื่อนไขที่เลือก
@@ -450,8 +447,9 @@ function CriteriaPanel({ criteria }: { criteria: Criterion[] }) {
             <CardHeader>
                 <CardTitle className="text-base">เกณฑ์การประเมิน</CardTitle>
                 <p className="text-xs text-muted-foreground">
-                    เฉพาะผู้ดูแลระบบ — เกณฑ์ที่ใช้งานจะปรากฏในแบบประเมินของงานซ่อม
-                    (มาตรวัด 5 ดาว, 5 ดีที่สุด)
+                    เฉพาะผู้ดูแลระบบ —
+                    เกณฑ์ที่ใช้งานจะปรากฏในแบบประเมินของงานซ่อม (มาตรวัด 5 ดาว,
+                    5 ดีที่สุด)
                 </p>
             </CardHeader>
             <CardContent className="space-y-3">

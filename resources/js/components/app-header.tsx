@@ -1,6 +1,7 @@
 import { Link, usePage } from '@inertiajs/react';
 import { LayoutGrid, Menu, Search } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
+import { bp } from '@/lib/base-path';
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -75,7 +76,9 @@ export function AppHeader({ breadcrumbs = [] }: Props) {
                                 </SheetTitle>
                                 <SheetHeader className="flex justify-start text-left">
                                     <img
-                                        src="/image/manage-server-logo.png"
+                                        src={bp(
+                                            '/image/manage-server-logo.png',
+                                        )}
                                         alt="Manage Server"
                                         className="h-6 w-6 object-contain"
                                     />

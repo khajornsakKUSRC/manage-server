@@ -981,7 +981,13 @@ class VsphereService
     {
         $request = $request->timeout(30)->withHeaders(['vmware-api-session-id' => $sessionId]);
 
-        return app()->environment('production') ? $request : $request->withoutVerifying();
+        // Same self-signed/internal-CA vCenter cert as client() above —
+        // verification is skipped unconditionally there for the same
+        // reason; this second, separate gate (used by the pooled guest
+        // filesystem/identity calls) was missed when that one was fixed,
+        // so pooled requests kept failing with cURL error 60 in production
+        // even after the main session-based calls started working.
+        return $request->withoutVerifying();
     }
 
     /**
@@ -1313,14 +1319,13 @@ class VsphereService
 
     protected function client(): PendingRequest
     {
-        $http = Http::timeout(30);
-
-        // Self-signed certs are common on internal vCenter appliances;
-        // only skip verification outside production.
-        if (! app()->environment('production')) {
-            $http = $http->withoutVerifying();
-        }
-
-        return $http;
+        // This vCenter appliance (VSPHERE_URL, a private IP) presents a
+        // self-signed/internal-CA certificate that will never be in a
+        // public CA bundle, in any environment — verifying against one is
+        // never going to succeed here, only ever fail with cURL error 60.
+        // Skipped everywhere (not just outside production) rather than
+        // gated on environment(); the exposure is limited to this one
+        // internal, non-internet-routable host.
+        return Http::timeout(30)->withoutVerifying();
     }
 }

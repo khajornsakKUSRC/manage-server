@@ -2,6 +2,8 @@ import type { RequestPayload } from '@inertiajs/core';
 import { Head, Link, router } from '@inertiajs/react';
 import {
     AlertTriangle,
+    ChevronDown,
+    ChevronRight,
     Gauge,
     LayoutGrid,
     Mail,
@@ -16,10 +18,11 @@ import {
     Wrench,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -30,10 +33,28 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { notifyError, notifySuccess } from '@/lib/swal';
+import {
+    clearThemePreview,
+    previewTheme,
+    swatchColor,
+    THEME_OPTIONS,
+} from '@/lib/theme-palette';
 
 interface NotifyEmail {
     email: string;
     notify: boolean;
+    // When true (the default), the address is alerted for every monitored
+    // service. When false, only for the services whose id is in
+    // service_ids.
+    all_services: boolean;
+    service_ids: number[];
+}
+
+interface MonitoredServiceOption {
+    id: number;
+    label: string;
+    host: string;
+    service_name: string;
 }
 
 interface Settings {
@@ -42,6 +63,7 @@ interface Settings {
     favicon_url: string | null;
     timezone: string;
     footer_text: string | null;
+    theme_color: string;
     cpu_warning_pct: number;
     cpu_critical_pct: number;
     mem_warning_pct: number;
@@ -90,6 +112,7 @@ interface Props {
     timezones: string[];
     pages: Record<string, string>;
     telegramStatus: TelegramStatus;
+    monitoredServices: MonitoredServiceOption[];
 }
 
 function ToggleSwitch({
@@ -294,6 +317,7 @@ export default function Index({
     timezones,
     pages,
     telegramStatus,
+    monitoredServices,
 }: Props) {
     const [maintenanceEnabled, setMaintenanceEnabled] = useState(
         settings.maintenance_mode_enabled,
@@ -308,6 +332,30 @@ export default function Index({
 
     const [timezone, setTimezone] = useState(settings.timezone);
     const [footerText, setFooterText] = useState(settings.footer_text ?? '');
+
+    const [themeColor, setThemeColor] = useState(settings.theme_color);
+    // True whenever the on-screen preview (applied instantly, see
+    // previewTheme()) doesn't match what's actually saved — so we know to
+    // undo it on unmount if the admin navigates away without saving,
+    // rather than leaving another page stuck showing an unsaved theme. A
+    // ref (not state) because only the unmount cleanup below reads it —
+    // state here would fire that effect's cleanup on every change instead
+    // of only on unmount.
+    const themePreviewDirtyRef = useRef(false);
+
+    const chooseTheme = (key: string) => {
+        previewTheme(key);
+        setThemeColor(key);
+        themePreviewDirtyRef.current = key !== settings.theme_color;
+    };
+
+    useEffect(() => {
+        return () => {
+            if (themePreviewDirtyRef.current) {
+                clearThemePreview();
+            }
+        };
+    }, []);
 
     const [cpuWarning, setCpuWarning] = useState(settings.cpu_warning_pct);
     const [cpuCritical, setCpuCritical] = useState(settings.cpu_critical_pct);
@@ -351,9 +399,19 @@ export default function Index({
         settings.notify_services_interval_minutes,
     );
     const [servicesEmails, setServicesEmails] = useState<NotifyEmail[]>(
-        settings.notify_services_emails ?? [],
+        (settings.notify_services_emails ?? []).map((row) => ({
+            email: row.email,
+            notify: row.notify,
+            // Rows written before per-service scoping have neither key;
+            // treat them as "all services", matching the backend default.
+            all_services: row.all_services ?? true,
+            service_ids: Array.isArray(row.service_ids) ? row.service_ids : [],
+        })),
     );
     const [newServiceEmail, setNewServiceEmail] = useState('');
+    const [expandedServiceEmail, setExpandedServiceEmail] = useState<
+        string | null
+    >(null);
 
     const addServiceEmail = () => {
         const email = newServiceEmail.trim().toLowerCase();
@@ -369,18 +427,56 @@ export default function Index({
         }
 
         // Added with notification permission off — it has to be granted
-        // explicitly before this address receives anything.
-        setServicesEmails((prev) => [...prev, { email, notify: false }]);
+        // explicitly before this address receives anything. Defaults to
+        // all services; narrow it with the per-address scope control.
+        setServicesEmails((prev) => [
+            ...prev,
+            { email, notify: false, all_services: true, service_ids: [] },
+        ]);
         setNewServiceEmail('');
     };
 
     const removeServiceEmail = (email: string) => {
         setServicesEmails((prev) => prev.filter((r) => r.email !== email));
+
+        if (expandedServiceEmail === email) {
+            setExpandedServiceEmail(null);
+        }
     };
 
     const setServiceEmailNotify = (email: string, notify: boolean) => {
         setServicesEmails((prev) =>
             prev.map((r) => (r.email === email ? { ...r, notify } : r)),
+        );
+    };
+
+    const setServiceEmailAllServices = (
+        email: string,
+        allServices: boolean,
+    ) => {
+        setServicesEmails((prev) =>
+            prev.map((r) =>
+                r.email === email ? { ...r, all_services: allServices } : r,
+            ),
+        );
+    };
+
+    const toggleServiceEmailService = (email: string, serviceId: number) => {
+        setServicesEmails((prev) =>
+            prev.map((r) => {
+                if (r.email !== email) {
+                    return r;
+                }
+
+                const has = r.service_ids.includes(serviceId);
+
+                return {
+                    ...r,
+                    service_ids: has
+                        ? r.service_ids.filter((id) => id !== serviceId)
+                        : [...r.service_ids, serviceId],
+                };
+            }),
         );
     };
     const [servicesTelegramEnabled, setServicesTelegramEnabled] = useState(
@@ -528,6 +624,7 @@ export default function Index({
                 remove_favicon: removeFavicon,
                 timezone,
                 footer_text: footerText,
+                theme_color: themeColor,
                 cpu_warning_pct: cpuWarning,
                 cpu_critical_pct: cpuCritical,
                 mem_warning_pct: memWarning,
@@ -580,6 +677,10 @@ export default function Index({
                     setRemoveFavicon(false);
                     setItRepairEmailLogoFile(null);
                     setRemoveItRepairEmailLogo(false);
+                    // The on-screen preview now matches what's persisted —
+                    // safe to leave applied without the unmount cleanup
+                    // reverting it.
+                    themePreviewDirtyRef.current = false;
                 },
                 onError: (formErrors) => {
                     setErrors(formErrors as Record<string, string>);
@@ -707,6 +808,46 @@ export default function Index({
                         <CardTitle>Branding</CardTitle>
                     </CardHeader>
                     <CardContent className="grid gap-6 sm:grid-cols-2">
+                        <div className="space-y-2 sm:col-span-2">
+                            <Label>Theme Color</Label>
+                            <div className="flex flex-wrap gap-3">
+                                {Object.entries(THEME_OPTIONS).map(
+                                    ([key, option]) => (
+                                        <button
+                                            key={key}
+                                            type="button"
+                                            onClick={() => chooseTheme(key)}
+                                            className={`flex flex-col items-center gap-1.5 rounded-lg border-2 p-2 transition-colors ${
+                                                themeColor === key
+                                                    ? 'border-primary'
+                                                    : 'border-transparent hover:border-border'
+                                            }`}
+                                        >
+                                            <span
+                                                className="h-8 w-8 rounded-full border shadow-sm"
+                                                style={{
+                                                    backgroundColor:
+                                                        swatchColor(key),
+                                                }}
+                                            />
+                                            <span className="text-xs text-muted-foreground">
+                                                {option.label}
+                                            </span>
+                                        </button>
+                                    ),
+                                )}
+                            </div>
+                            {errors.theme_color && (
+                                <p className="text-xs text-red-500">
+                                    {errors.theme_color}
+                                </p>
+                            )}
+                            <p className="text-xs text-muted-foreground">
+                                Applies instantly as a preview — click Save
+                                below to make it permanent for everyone.
+                            </p>
+                        </div>
+
                         <div className="space-y-2 sm:col-span-2">
                             <Label>Website Icon (Favicon)</Label>
                             <div className="flex items-center gap-3">
@@ -927,9 +1068,8 @@ export default function Index({
                                             Services
                                         </Link>{' '}
                                         page) stops being active. Add/remove
-                                        which services to watch from that
-                                        page — this only controls the
-                                        alert.
+                                        which services to watch from that page —
+                                        this only controls the alert.
                                     </>
                                 }
                                 enabled={servicesEnabled}
@@ -941,9 +1081,7 @@ export default function Index({
                                         disabled={!servicesEnabled}
                                     />
                                 }
-                                error={
-                                    errors.notify_services_interval_minutes
-                                }
+                                error={errors.notify_services_interval_minutes}
                             />
                             <NotificationRow
                                 title="Daily Report"
@@ -962,12 +1100,14 @@ export default function Index({
                                     Notify Email
                                 </p>
                                 <p className="text-xs text-muted-foreground">
-                                    Recipients for the Service Monitoring
-                                    alert above. Add an address first, then
-                                    grant it permission to be notified —
-                                    only addresses with the toggle on
-                                    receive mail. Email is sent in addition
-                                    to Telegram, not instead of it.
+                                    Recipients for the Service Monitoring alert
+                                    above. Add an address first, then grant it
+                                    permission to be notified — only addresses
+                                    with the toggle on receive mail. Use the
+                                    scope control on each address to send alerts
+                                    for every service or just a chosen few.
+                                    Email is sent in addition to Telegram, not
+                                    instead of it.
                                 </p>
                             </div>
                             <div className="space-y-2">
@@ -1027,47 +1167,167 @@ export default function Index({
 
                             {servicesEmails.length === 0 ? (
                                 <p className="text-xs text-muted-foreground">
-                                    No addresses added — email notifications
-                                    are off. Telegram (below) still applies.
+                                    No addresses added — email notifications are
+                                    off. Telegram (below) still applies.
                                 </p>
                             ) : (
                                 <ul className="divide-y rounded-md border">
-                                    {servicesEmails.map((row) => (
-                                        <li
-                                            key={row.email}
-                                            className="flex items-center justify-between gap-3 px-3 py-2"
-                                        >
-                                            <span className="min-w-0 flex-1 truncate text-sm">
-                                                {row.email}
-                                            </span>
-                                            <div className="flex shrink-0 items-center gap-3">
-                                                <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                                                    Send notifications
-                                                    <ToggleSwitch
-                                                        checked={row.notify}
-                                                        onChange={(value) =>
-                                                            setServiceEmailNotify(
-                                                                row.email,
-                                                                value,
-                                                            )
-                                                        }
-                                                    />
-                                                </label>
-                                                <Button
-                                                    type="button"
-                                                    size="icon"
-                                                    variant="ghost"
-                                                    onClick={() =>
-                                                        removeServiceEmail(
-                                                            row.email,
-                                                        )
-                                                    }
-                                                >
-                                                    <Trash2 className="h-4 w-4 text-red-500" />
-                                                </Button>
-                                            </div>
-                                        </li>
-                                    ))}
+                                    {servicesEmails.map((row) => {
+                                        const isExpanded =
+                                            expandedServiceEmail === row.email;
+                                        const scopeSummary = row.all_services
+                                            ? 'All services'
+                                            : `${row.service_ids.length} of ${monitoredServices.length} service${monitoredServices.length === 1 ? '' : 's'}`;
+
+                                        return (
+                                            <li
+                                                key={row.email}
+                                                className="px-3 py-2"
+                                            >
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <span className="min-w-0 flex-1 truncate text-sm">
+                                                        {row.email}
+                                                    </span>
+                                                    <div className="flex shrink-0 items-center gap-3">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                setExpandedServiceEmail(
+                                                                    isExpanded
+                                                                        ? null
+                                                                        : row.email,
+                                                                )
+                                                            }
+                                                            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                                                        >
+                                                            {isExpanded ? (
+                                                                <ChevronDown className="h-3.5 w-3.5" />
+                                                            ) : (
+                                                                <ChevronRight className="h-3.5 w-3.5" />
+                                                            )}
+                                                            {scopeSummary}
+                                                        </button>
+                                                        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                                                            Send notifications
+                                                            <ToggleSwitch
+                                                                checked={
+                                                                    row.notify
+                                                                }
+                                                                onChange={(
+                                                                    value,
+                                                                ) =>
+                                                                    setServiceEmailNotify(
+                                                                        row.email,
+                                                                        value,
+                                                                    )
+                                                                }
+                                                            />
+                                                        </label>
+                                                        <Button
+                                                            type="button"
+                                                            size="icon"
+                                                            variant="ghost"
+                                                            onClick={() =>
+                                                                removeServiceEmail(
+                                                                    row.email,
+                                                                )
+                                                            }
+                                                        >
+                                                            <Trash2 className="h-4 w-4 text-red-500" />
+                                                        </Button>
+                                                    </div>
+                                                </div>
+
+                                                {isExpanded && (
+                                                    <div className="mt-2 space-y-2 rounded-md bg-muted/50 p-3">
+                                                        <label className="flex items-center gap-2 text-sm">
+                                                            <Checkbox
+                                                                checked={
+                                                                    row.all_services
+                                                                }
+                                                                onCheckedChange={(
+                                                                    value,
+                                                                ) =>
+                                                                    setServiceEmailAllServices(
+                                                                        row.email,
+                                                                        value ===
+                                                                            true,
+                                                                    )
+                                                                }
+                                                            />
+                                                            All services
+                                                            (including ones
+                                                            added later)
+                                                        </label>
+
+                                                        {!row.all_services &&
+                                                            (monitoredServices.length ===
+                                                            0 ? (
+                                                                <p className="text-xs text-muted-foreground">
+                                                                    No monitored
+                                                                    services yet
+                                                                    — add them
+                                                                    on the
+                                                                    Services
+                                                                    page.
+                                                                </p>
+                                                            ) : (
+                                                                <ul className="space-y-1 border-l pl-3">
+                                                                    {monitoredServices.map(
+                                                                        (
+                                                                            service,
+                                                                        ) => (
+                                                                            <li
+                                                                                key={
+                                                                                    service.id
+                                                                                }
+                                                                            >
+                                                                                <label className="flex items-center gap-2 text-sm">
+                                                                                    <Checkbox
+                                                                                        checked={row.service_ids.includes(
+                                                                                            service.id,
+                                                                                        )}
+                                                                                        onCheckedChange={() =>
+                                                                                            toggleServiceEmailService(
+                                                                                                row.email,
+                                                                                                service.id,
+                                                                                            )
+                                                                                        }
+                                                                                    />
+                                                                                    <span className="truncate">
+                                                                                        {
+                                                                                            service.label
+                                                                                        }
+                                                                                        <span className="ml-1 font-mono text-xs text-muted-foreground">
+                                                                                            {`${service.service_name}@${service.host}`}
+                                                                                        </span>
+                                                                                    </span>
+                                                                                </label>
+                                                                            </li>
+                                                                        ),
+                                                                    )}
+                                                                </ul>
+                                                            ))}
+
+                                                        {row.notify &&
+                                                            !row.all_services &&
+                                                            row.service_ids
+                                                                .length ===
+                                                                0 && (
+                                                                <p className="text-xs text-amber-600 dark:text-amber-500">
+                                                                    No services
+                                                                    selected —
+                                                                    this address
+                                                                    will not
+                                                                    receive any
+                                                                    alert.
+                                                                </p>
+                                                            )}
+                                                    </div>
+                                                )}
+                                            </li>
+                                        );
+                                    })}
                                 </ul>
                             )}
 
@@ -1133,8 +1393,8 @@ export default function Index({
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <p className="text-sm text-muted-foreground">
-                            Content sent by the &quot;Send Email&quot; button
-                            on the{' '}
+                            Content sent by the &quot;Send Email&quot; button on
+                            the{' '}
                             <Link
                                 href="/it-repair"
                                 className="underline underline-offset-2"
@@ -1142,8 +1402,8 @@ export default function Index({
                                 IT Repair
                             </Link>{' '}
                             page — it emails the recipient who filed the
-                            request. Use these placeholders anywhere below
-                            and they&apos;ll be filled in per request:{' '}
+                            request. Use these placeholders anywhere below and
+                            they&apos;ll be filled in per request:{' '}
                             {[
                                 'full_name',
                                 'recipient_email',
@@ -1175,15 +1435,13 @@ export default function Index({
                             <code className="rounded bg-muted px-1 py-0.5">
                                 {'<a href>'}
                             </code>{' '}
-                            tag — email clients turn a plain https:// link
-                            into a clickable one automatically, but literal
-                            HTML tags show up as text instead of a link.
+                            tag — email clients turn a plain https:// link into
+                            a clickable one automatically, but literal HTML tags
+                            show up as text instead of a link.
                         </p>
 
                         <div className="space-y-2">
-                            <Label htmlFor="repair-email-header">
-                                Header
-                            </Label>
+                            <Label htmlFor="repair-email-header">Header</Label>
                             <Input
                                 id="repair-email-header"
                                 value={itRepairEmailHeader}
@@ -1219,9 +1477,7 @@ export default function Index({
                         </div>
 
                         <div className="space-y-2">
-                            <Label htmlFor="repair-email-body">
-                                Details
-                            </Label>
+                            <Label htmlFor="repair-email-body">Details</Label>
                             <textarea
                                 id="repair-email-body"
                                 className="flex min-h-32 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
@@ -1241,9 +1497,7 @@ export default function Index({
                         </div>
 
                         <div className="space-y-2">
-                            <Label htmlFor="repair-email-footer">
-                                Footer
-                            </Label>
+                            <Label htmlFor="repair-email-footer">Footer</Label>
                             <textarea
                                 id="repair-email-footer"
                                 className="flex min-h-16 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
@@ -1265,9 +1519,8 @@ export default function Index({
                                 Template design
                             </p>
                             <p className="text-xs text-muted-foreground">
-                                The logo, colours and layout of the email
-                                itself — everything wrapped around the text
-                                above.
+                                The logo, colours and layout of the email itself
+                                — everything wrapped around the text above.
                             </p>
                         </div>
 
